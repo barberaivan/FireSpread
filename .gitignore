@@ -1,0 +1,6 @@
+..Rcheck
+.vscode
+
+*.o
+*.so
+*.rds
