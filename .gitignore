@@ -1,0 +1,11 @@
+..Rcheck
+.vscode
+
+*.o
+*.so
+*.rds
+
+src/RcppExports.cpp
+R/RcppExports.R
+
+*.tar.gz
