@@ -88,7 +88,7 @@ test_that("Deterministic fire spread functions", {
     upper_limit = 1.0
   )
 
-  fire_cpp <- simulate_fire_deterministic_cpp(
+  fire_cpp <- simulate_fire_deterministic(
     terrain = land_cube(landscape), # use the array
     vegetation = vegetation,
     ignition_cells = ig_location - 1,

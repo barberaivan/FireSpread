@@ -101,7 +101,7 @@ const float angles[8] = {
 
 // --------------------------------------------------------------------------
 
-//' @title spread_onepix_prob_cpp
+//' @title spread_one_cell_prob
 //' @description Calculates the probability of a cell spreading fire to another.
 //' @return float [0, 1] indicating the probability.
 //'
@@ -126,7 +126,7 @@ const float angles[8] = {
 //'   1 makes absurdly large fires; 0.5 is preferred).
 
 // [[Rcpp::export]]
-float spread_onepix_prob_cpp(
+float spread_one_cell_prob(
   int vegetation_type,
   arma::frowvec terrain_burning,
   arma::frowvec terrain_neighbour,
@@ -163,7 +163,7 @@ float spread_onepix_prob_cpp(
 // Bernoulli distribution (here for backwards compatibility)
 
 // [[Rcpp::export]]
-int spread_onepix_cpp(
+int spread_one_cell(
   int vegetation_type,
   arma::frowvec terrain_burning,
   arma::frowvec terrain_neighbour,
@@ -173,7 +173,7 @@ int spread_onepix_cpp(
   float upper_limit = 1.0
 ) {
 
-  float prob = spread_onepix_prob_cpp(
+  float prob = spread_one_cell_prob(
     vegetation_type,
     terrain_burning,
     terrain_neighbour,
@@ -319,7 +319,7 @@ burned_res simulate_fire_internal(
         arma::frowvec terrain_neighbour = terrain.tube(neighbours[0][n], neighbours[1][n]);
 
         // simulate fire
-        float prob = spread_onepix_prob_cpp(
+        float prob = spread_one_cell_prob(
           veg_target,
           terrain_burning,
           terrain_neighbour,
@@ -461,7 +461,7 @@ IntegerMatrix simulate_fire_animate(
         arma::frowvec terrain_neighbour = terrain.tube(neighbours[0][n], neighbours[1][n]);
 
         // simulate fire
-        float prob = spread_onepix_prob_cpp(
+        float prob = spread_one_cell_prob(
           veg_target,
           terrain_burning,
           terrain_neighbour,
@@ -529,7 +529,7 @@ IntegerMatrix simulate_fire_cpp(
 // cpp is caused by seed problems
 
 // [[Rcpp::export]]
-IntegerMatrix simulate_fire_deterministic_cpp(
+IntegerMatrix simulate_fire_deterministic(
     IntegerMatrix vegetation,
     arma::fcube terrain,
     IntegerMatrix ignition_cells,
