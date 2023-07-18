@@ -220,9 +220,9 @@ int spread_one_cell(
 //'   testing.)
 
 burned_res simulate_fire_internal(
-    IntegerMatrix vegetation,
-    arma::fcube terrain,
-    IntegerMatrix ignition_cells,
+    const IntegerMatrix& vegetation,
+    const arma::fcube& terrain,
+    const IntegerMatrix& ignition_cells,
     arma::frowvec coef,
     int n_veg_types,
     float upper_limit,
@@ -360,9 +360,9 @@ burned_res simulate_fire_internal(
 
 // [[Rcpp::export]]
 IntegerMatrix simulate_fire_animate(
-    IntegerMatrix vegetation,
-    arma::fcube terrain,
-    IntegerMatrix ignition_cells,
+    const IntegerMatrix& vegetation,
+    const arma::fcube& terrain,
+    const IntegerMatrix& ignition_cells,
     arma::frowvec coef,
     int n_veg_types = 6,
     float upper_limit = 1.0
@@ -505,10 +505,10 @@ IntegerMatrix simulate_fire_animate(
 // The same function to be exported to R, only returning the binary burned_bin
 // matrix.
 // [[Rcpp::export]]
-IntegerMatrix simulate_fire_cpp(
-    IntegerMatrix vegetation,
-    arma::fcube terrain,
-    IntegerMatrix ignition_cells,
+IntegerMatrix simulate_fire(
+    const IntegerMatrix& vegetation,
+    const arma::fcube& terrain,
+    const IntegerMatrix& ignition_cells,
     arma::frowvec coef,
     int n_veg_types = 6,
     float upper_limit = 1.0
@@ -530,9 +530,9 @@ IntegerMatrix simulate_fire_cpp(
 
 // [[Rcpp::export]]
 IntegerMatrix simulate_fire_deterministic(
-    IntegerMatrix vegetation,
-    arma::fcube terrain,
-    IntegerMatrix ignition_cells,
+    const IntegerMatrix& vegetation,
+    const arma::fcube& terrain,
+    const IntegerMatrix& ignition_cells,
     arma::frowvec coef,
     int n_veg_types = 6,
     float upper_limit = 1.0
@@ -559,10 +559,10 @@ IntegerMatrix simulate_fire_deterministic(
 //   NumericVector counts_veg: burned pixels by veg_type. It has to be numeric
 //     and not integer to allow non-integer divisions later.
 
-burned_compare simulate_fire_compare_cpp(
-    IntegerMatrix vegetation,
-    arma::fcube terrain,
-    IntegerMatrix ignition_cells,
+burned_compare simulate_fire_compare_internal(
+    const IntegerMatrix& vegetation,
+    const arma::fcube& terrain,
+    const IntegerMatrix& ignition_cells,
     arma::frowvec coef,
     int n_veg_types,
     float upper_limit
@@ -593,15 +593,15 @@ burned_compare simulate_fire_compare_cpp(
 
 // [[Rcpp::export]]
 List simulate_fire_compare(
-    IntegerMatrix vegetation,
-    arma::fcube terrain,
-    IntegerMatrix ignition_cells,
+    const IntegerMatrix& vegetation,
+    const arma::fcube& terrain,
+    const IntegerMatrix& ignition_cells,
     arma::frowvec coef,
     int n_veg_types,
     float upper_limit
 ) {
 
-  burned_compare burned_com = simulate_fire_compare_cpp(
+  burned_compare burned_com = simulate_fire_compare_internal(
     vegetation,
     terrain,
     ignition_cells,

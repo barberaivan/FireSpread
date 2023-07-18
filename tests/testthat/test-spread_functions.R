@@ -55,7 +55,7 @@ test_that("Fire spread functions", {
   )
 
   set.seed(30)
-  fire_cpp <- simulate_fire_cpp(
+  fire_cpp <- simulate_fire(
     terrain = land_cube(landscape), # use the array
     vegetation = vegetation,
     ignition_cells = ig_location - 1,

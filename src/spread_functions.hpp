@@ -47,28 +47,28 @@ struct burned_compare {
 // Functions ---------------------------------------------------------------
 
 burned_res simulate_fire_internal(
-  IntegerMatrix vegetation,
-  arma::fcube terrain,
-  IntegerMatrix ignition_cells,
+  const IntegerMatrix& vegetation,
+  const arma::fcube& terrain,
+  const IntegerMatrix& ignition_cells,
   arma::frowvec coef,
   int n_veg_types = 6,
   float upper_limit = 1.0,
   double (*prob_fn)(double, double) = R::rbinom
 );
 
-burned_compare simulate_fire_compare_cpp(
-  IntegerMatrix vegetation,
-  arma::fcube terrain,
-  IntegerMatrix ignition_cells,
+burned_compare simulate_fire_compare_internal(
+  const IntegerMatrix& vegetation,
+  const arma::fcube& terrain,
+  const IntegerMatrix& ignition_cells,
   arma::frowvec coef,
   int n_veg_types = 6,
   float upper_limit = 1.0
 );
 
 List simulate_fire_compare(
-  IntegerMatrix vegetation,
-  arma::fcube terrain,
-  IntegerMatrix ignition_cells,
+  const IntegerMatrix& vegetation,
+  const arma::fcube& terrain,
+  const IntegerMatrix& ignition_cells,
   arma::frowvec coef,
   int n_veg_types = 6,
   float upper_limit = 1.0
