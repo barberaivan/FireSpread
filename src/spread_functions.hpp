@@ -38,11 +38,11 @@ struct burned_res {
   int end;
 };
 
-typedef struct _s_burned_compare {
+struct burned_compare {
   IntegerMatrix burned_layer;
   IntegerMatrix burned_ids;
   NumericVector counts_veg; // need to be numeric to compute divisions later
-} burned_compare;
+};
 
 // Functions ---------------------------------------------------------------
 

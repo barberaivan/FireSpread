@@ -4,7 +4,7 @@ using namespace Rcpp;
 
 #include "spread_functions.hpp"
 
-typedef struct _s_compare_result {
+struct compare_result {
   float overlap_sp;
 
   float overlap_vd;
@@ -18,7 +18,7 @@ typedef struct _s_compare_result {
   float sp_expquad_7525;
   float sp_quad_5050;
   float sp_quad_7525;
-} compare_result;
+};
 
 compare_result compare_fires_try_internal(
     burned_compare fire1,
