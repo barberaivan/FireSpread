@@ -79,7 +79,7 @@ rast_from_mat <- function(m, fill_raster) { # fill_raster is a SpatRaster from t
 
 # Spread functions --------------------------------------------------------
 
-#' @title spread_onepix_prob_cpp
+#' @title spread_one_cell_r
 #' @description Calculates the probability of a cell spreading fire to another.
 #' @return float [0, 1] indicating the probability.
 #'
@@ -103,7 +103,7 @@ rast_from_mat <- function(m, fill_raster) { # fill_raster is a SpatRaster from t
 #' @param float upper_limit: upper limit for spread probability (setting to
 #'   1 makes absurdly large fires; 0.5 is preferred).
 
-spread_onepix_r <- function(
+spread_one_cell_r <- function(
     vegetation_type, # starts at 0
     terrain_burning,
     terrain_neighbour,
@@ -283,7 +283,7 @@ simulate_fire_r <- function(
         terrain_neighbour = terrain_arr[neighbours[1, n], neighbours[2, n], ];
 
         # simulate fire
-        burn <- spread_onepix_r(
+        burn <- spread_one_cell_r(
           veg_target,
           terrain_burning,
           terrain_neighbour,
@@ -445,7 +445,7 @@ simulate_fire_deterministic_r <- function(
         terrain_neighbour = terrain_arr[neighbours[1, n], neighbours[2, n], ];
 
         # simulate fire
-        burn <- spread_onepix_r(
+        burn <- spread_one_cell_r(
           veg_target,
           terrain_burning,
           terrain_neighbour,

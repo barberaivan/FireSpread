@@ -20,7 +20,7 @@ typedef struct _s_compare_result {
   float sp_quad_7525;
 } compare_result;
 
-compare_result compare_fires_try_cpp(
+compare_result compare_fires_try_internal(
     burned_compare fire1,
     burned_compare fire2,
     float lscale = 0.2
@@ -164,7 +164,7 @@ NumericVector compare_fires_try(List fire1, List fire2,
   NumericVector counts1 = fire1["counts_veg"];
   NumericVector counts2 = fire2["counts_veg"];
 
-  compare_result indexes = compare_fires_try_cpp(
+  compare_result indexes = compare_fires_try_internal(
     {burned1, burned_ids1, counts1},
     {burned2, burned_ids2, counts2}
   );
