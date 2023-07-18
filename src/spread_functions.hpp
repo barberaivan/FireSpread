@@ -9,8 +9,8 @@ using namespace Rcpp;
 // Constants ---------------------------------------------------------------
 
 // Elevation data to standardize distance between pixels
-const float elevation_mean = 1163.3;
-const float elevation_sd = 399.5;
+constexpr float elevation_mean = 1163.3;
+constexpr float elevation_sd = 399.5;
 
 // Structs ans enums -------------------------------------------------------
 

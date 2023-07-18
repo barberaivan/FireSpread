@@ -60,7 +60,7 @@ const float distances[8] = {
 };
 // it didn't let me loop to divide by elevation_sd
 
-const int moves[8][2] = {
+constexpr int moves[8][2] = {
   {-1, -1},
   {-1,  0},
   {-1,  1},
@@ -92,7 +92,7 @@ const int moves[8][2] = {
 // the direction from which the wind comes, these angles must represent where the
 // fire would come from if from the neighbours we look at the central pixel.
 
-const float angles[8] = {
+constexpr float angles[8] = {
   M_PI * 3 / 4, M_PI, M_PI * 5 / 4,
   M_PI / 2,           M_PI * 3 / 2,
   M_PI / 4,      0,   M_PI * 7 / 4
