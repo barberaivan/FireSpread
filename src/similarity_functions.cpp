@@ -96,8 +96,8 @@ compare_result compare_fires_try_internal(
 
   // Transform to similarities
   float overlap_norm = 1.0 - delta_norm_unit;
-  float overlap_expquad = exp(-pow(delta_norm_unit, 2.0) / lscale); // 0.2 is the Gaussian SD.
-  float overlap_quad = 1 - pow(delta_norm_unit, 2.0);
+  float overlap_expquad = expf(-delta_norm_unit*delta_norm_unit / lscale); // 0.2 is the Gaussian SD.
+  float overlap_quad = 1 - delta_norm_unit*delta_norm_unit;
 
   // ---------------------------------------------------------------------
 
