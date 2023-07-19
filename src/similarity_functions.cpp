@@ -4,7 +4,7 @@ using namespace Rcpp;
 
 #include "spread_functions.hpp"
 
-typedef struct _s_compare_result {
+struct compare_result {
   float overlap_sp;
 
   float overlap_vd;
@@ -18,27 +18,27 @@ typedef struct _s_compare_result {
   float sp_expquad_7525;
   float sp_quad_5050;
   float sp_quad_7525;
-} compare_result;
+};
 
 compare_result compare_fires_try_internal(
-    burned_compare fire1,
-    burned_compare fire2,
+    const burned_compare& fire1,
+    const burned_compare& fire2,
     float lscale = 0.2
 ) {
 
   // Extract list elements ------------------------------------------------
 
-  IntegerMatrix burned1 = fire1.burned_layer;
-  IntegerMatrix burned2 = fire2.burned_layer;
+  const IntegerMatrix& burned1 = fire1.burned_layer;
+  const IntegerMatrix& burned2 = fire2.burned_layer;
 
-  IntegerMatrix burned_ids1 = fire1.burned_ids;
-  IntegerMatrix burned_ids2 = fire2.burned_ids;
+  const IntegerMatrix& burned_ids1 = fire1.burned_ids;
+  const IntegerMatrix& burned_ids2 = fire2.burned_ids;
 
   float size1 = burned_ids1.ncol();
   float size2 = burned_ids2.ncol();
 
-  NumericVector counts1 = fire1.counts_veg;
-  NumericVector counts2 = fire2.counts_veg;
+  const NumericVector& counts1 = fire1.counts_veg;
+  const NumericVector& counts2 = fire2.counts_veg;
 
   // overlap_sp -----------------------------------------------------------
 
@@ -96,8 +96,8 @@ compare_result compare_fires_try_internal(
 
   // Transform to similarities
   float overlap_norm = 1.0 - delta_norm_unit;
-  float overlap_expquad = exp(-pow(delta_norm_unit, 2.0) / lscale); // 0.2 is the Gaussian SD.
-  float overlap_quad = 1 - pow(delta_norm_unit, 2.0);
+  float overlap_expquad = expf(-delta_norm_unit*delta_norm_unit / lscale); // 0.2 is the Gaussian SD.
+  float overlap_quad = 1 - delta_norm_unit*delta_norm_unit;
 
   // ---------------------------------------------------------------------
 
@@ -235,9 +235,9 @@ NumericVector compare_fires_try(List fire1, List fire2,
 
 // [[Rcpp::export]]
 NumericMatrix emulate_loglik_try(
-    IntegerMatrix vegetation,
-    arma::fcube terrain,
-    IntegerMatrix ignition_cells,
+    const IntegerMatrix& vegetation,
+    const arma::fcube& terrain,
+    const IntegerMatrix& ignition_cells,
     arma::frowvec coef,
     List fire_ref,
     int n_veg_types = 6,

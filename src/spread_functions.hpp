@@ -9,8 +9,8 @@ using namespace Rcpp;
 // Constants ---------------------------------------------------------------
 
 // Elevation data to standardize distance between pixels
-const float elevation_mean = 1163.3;
-const float elevation_sd = 399.5;
+constexpr float elevation_mean = 1163.3;
+constexpr float elevation_sd = 399.5;
 
 // Structs ans enums -------------------------------------------------------
 
@@ -38,37 +38,37 @@ struct burned_res {
   int end;
 };
 
-typedef struct _s_burned_compare {
+struct burned_compare {
   IntegerMatrix burned_layer;
   IntegerMatrix burned_ids;
   NumericVector counts_veg; // need to be numeric to compute divisions later
-} burned_compare;
+};
 
 // Functions ---------------------------------------------------------------
 
 burned_res simulate_fire_internal(
-  IntegerMatrix vegetation,
-  arma::fcube terrain,
-  IntegerMatrix ignition_cells,
+  const IntegerMatrix& vegetation,
+  const arma::fcube& terrain,
+  const IntegerMatrix& ignition_cells,
   arma::frowvec coef,
   int n_veg_types = 6,
   float upper_limit = 1.0,
   double (*prob_fn)(double, double) = R::rbinom
 );
 
-burned_compare simulate_fire_compare_cpp(
-  IntegerMatrix vegetation,
-  arma::fcube terrain,
-  IntegerMatrix ignition_cells,
+burned_compare simulate_fire_compare_internal(
+  const IntegerMatrix& vegetation,
+  const arma::fcube& terrain,
+  const IntegerMatrix& ignition_cells,
   arma::frowvec coef,
   int n_veg_types = 6,
   float upper_limit = 1.0
 );
 
 List simulate_fire_compare(
-  IntegerMatrix vegetation,
-  arma::fcube terrain,
-  IntegerMatrix ignition_cells,
+  const IntegerMatrix& vegetation,
+  const arma::fcube& terrain,
+  const IntegerMatrix& ignition_cells,
   arma::frowvec coef,
   int n_veg_types = 6,
   float upper_limit = 1.0
