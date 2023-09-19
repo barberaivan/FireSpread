@@ -90,3 +90,37 @@ compare_fires_r <- function(fire1, fire2, lscale = 0.2) {
 
   return(indexes)
 }
+
+# overlap sp --------------------------------------------------------------
+
+overlap_spatial_r <- function(fire1, fire2) {
+
+  # Extract list elements
+
+  burned1 <- fire1[["burned_layer"]]
+  burned2 <- fire2[["burned_layer"]]
+
+  burned_ids1 <- fire1[["burned_ids"]] + 1 # important to add 1 to use R indexing
+  burned_ids2 <- fire2[["burned_ids"]] + 1
+
+  size1 <- ncol(burned_ids1)
+  size2 <- ncol(burned_ids2)
+
+  # compute common pixels only in the smaller fire
+  if(size1 < size2) {
+    bb <- numeric(size1)
+    for(i in 1:size1) {
+      bb[i] <- burned2[burned_ids1[1, i], burned_ids1[2, i]]
+    }
+  } else {
+    bb <- numeric(size2)
+    for(i in 1:size2) {
+      bb[i] <- burned1[burned_ids2[1, i], burned_ids2[2, i]]
+    }
+  }
+
+  common <- sum(bb)
+  overlap_sp <- common / (size1 + size2 - common)
+
+  return(overlap_sp)
+}

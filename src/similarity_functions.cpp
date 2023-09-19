@@ -4,6 +4,11 @@ using namespace Rcpp;
 
 #include "spread_functions.hpp"
 
+/*
+ * Note that functions other than overlap_sp require the counts_veg argument,
+ * so the vegetation layer must be provided to the simulator.
+ */
+
 struct compare_result {
   float overlap_sp;
 
@@ -20,13 +25,16 @@ struct compare_result {
   float sp_quad_7525;
 };
 
+
+// compare fires by many metrics ----------------------------------------
+
 compare_result compare_fires_try_internal(
-    const burned_compare& fire1,
-    const burned_compare& fire2,
+    const burned_compare_veg& fire1, // _veg has the counts_veg object
+    const burned_compare_veg& fire2,
     float lscale = 0.2
 ) {
 
-  // Extract list elements ------------------------------------------------
+  // Extract list elements ----------
 
   const IntegerMatrix& burned1 = fire1.burned_layer;
   const IntegerMatrix& burned2 = fire2.burned_layer;
@@ -40,7 +48,7 @@ compare_result compare_fires_try_internal(
   const NumericVector& counts1 = fire1.counts_veg;
   const NumericVector& counts2 = fire2.counts_veg;
 
-  // overlap_sp -----------------------------------------------------------
+  // overlap_sp ----------
 
   float common = 0.0;
   // compute common pixels only in the smaller fire
@@ -56,7 +64,7 @@ compare_result compare_fires_try_internal(
 
   float overlap_sp = common / (size1 + size2 - common);
 
-  // overlap_vd -----------------------------------------------------------
+  // overlap_vd ----------
 
   // Get vegetation distribution by fire (normalized burned areas)
   int veg_types = counts1.length();
@@ -75,7 +83,7 @@ compare_result compare_fires_try_internal(
     overlap_vd += std::min(burned_dist_1[v], burned_dist_2[v]);
   }
 
-  // deltas by veg_type ---------------------------------------------------
+  // deltas by veg_type ----------
 
   // normalized difference using absolute difference. The difference by veg_type
   // is in [0, 1]. So, if we divide delta_norm by veg_num, it will be in [0, 1].
@@ -188,95 +196,48 @@ NumericVector compare_fires_try(List fire1, List fire2,
   );
 }
 
-// Emulate likelihood function --------------------------------------------
-// trying many discrepancy functions
+// overlap_spatial --------------------------------------------------------
 
-//' @title emulate_loglik_try
-//' @description Function to emulate the spread model's likelihood, approximated
-//'   by many similarity indexes between the observed and
-//'   simulated fires. It's a wrapper around simulate_fire_compare, which returns
-//'   the simulated fire with data useful for comparison. In addition, it takes
-//'   as arguments data from the observed fire to be compared.
-//'   "_try" because it computes many similarity indexes; after selecting one
-//'   we will have a function to consider only the best one.
-//' @return NumericMatrix(n_replicates, n_metrics): Matrix with each comparison
-//'   metric (columns) by simulated fire (rows)
+//' @title overlap_spatial
+//' @description Compute the spatial overlap index between two fires.
+//' @return flot overlap_sp.
 
-//' @param IntegerMatrix vegetation: integer matrix representing the vegetation
-//'   type. 99 is non-burnable, and valid values are {0, ..., n_veg_types - 1}.
-//' @param arma::fcube terrain: terrain data, where each matrix slice is a
-//'   predictor: {northing, elevation, wind direction}. Slope is absent
-//'   because it's directional, so it's computed during the simulation.
-//' @param int n_veg_types: integer indicating the number of vegetation types
-//'   considered by the model (not just those present in the focal landscape).
-//'   used to read properly the vegetation- and non-vegetation parameters in
-//'   coef.
-//'
-//' @param IntegerMatrix ignition_cells(2, burning_cells): row and column id for
-//'   the cell(s) where the fire begun. First row has the row_id, second row has
-//'   the col_id.
-//' @param arma::frowvec coef: parameters in logistic regression to compute the
-//'   spread probability as a function of covariates.
-//' @param float upper_limit: upper limit for spread probability (setting to
-//'   1 makes absurdly large fires).
-//'
-//' @param List fire_obs: Data of the observed (reference) fire. This has the
+//' @param List fire1, List fire2: data from the fires to compare. This has the
 //'   same elements as the result from simulate_fire_compare:
 //'     IntegerMatrix burned_layer: binary matrix storing (1) in burned pixels;
-//'     IntegerMatrix burned_ids: id in [row, col] of the burned cells. First
-//'       row hols the rows, second row holds the columns, and each column is
-//'       a pixel;
-//'     NumericVector counts_veg: count of burned pixels by vegetation type.
+//'     IntegerMatrix burned_ids: id in [row, col] (0-indexing) of the burned
+//'       cells. First row holds the rows, second row holds the columns, and
+//'       each column is a burned pixel;
 //'   The burned_layer is used to compute the spatial overlap index; the
-//'   burned_ids is used to evaluate the common burned pixels only in the smallest
-//'   of the fires, evaluating only those burned_ids; counts_veg is used to
-//'   compute the difference in number of pixels burned by vegetation type.
-//' @param int n_replicates: number of fires to simulate, defaults to 10.
+//'   burned_ids is used to evaluate the common burned pixels, looping only in
+//'   the burned_ids from the smaller fire.
 
 // [[Rcpp::export]]
-NumericMatrix emulate_loglik_try(
-    const IntegerMatrix& vegetation,
-    const arma::fcube& terrain,
-    const IntegerMatrix& ignition_cells,
-    arma::frowvec coef,
-    List fire_ref,
-    int n_veg_types = 6,
-    float upper_limit = 1.0,
-    int n_replicates = 10
-) {
+float overlap_spatial(List fire1, List fire2) {
 
-  CharacterVector names = CharacterVector::create(
-    "overlap_sp",
-    "overlap_vd",
-    "overlap_norm",
-    "overlap_expquad",
-    "overlap_quad",
+  IntegerMatrix burned1 = fire1["burned_layer"];
+  IntegerMatrix burned2 = fire2["burned_layer"];
 
-    "sp_norm_5050",
-    "sp_norm_7525",
-    "sp_expquad_5050",
-    "sp_expquad_7525",
-    "sp_quad_5050",
-    "sp_quad_7525"
-  );
+  IntegerMatrix burned_ids1 = fire1["burned_ids"];
+  IntegerMatrix burned_ids2 = fire2["burned_ids"];
 
-  NumericMatrix similarity(n_replicates, names.length());
+  float size1 = burned_ids1.ncol();
+  float size2 = burned_ids2.ncol();
 
-  for(int i = 0; i < n_replicates; i++) {
+  // compute common pixels only in the smaller fire
+  float common = 0.0;
 
-    // simulate_fire
-    List fire_sim = simulate_fire_compare(
-      vegetation,
-      terrain,
-      ignition_cells,
-      coef,
-      n_veg_types,
-      upper_limit
-    );
-
-    similarity(i, _) = compare_fires_try(fire_ref, fire_sim);
+  if(size1 <= size2) {
+    for(int i = 0; i < size1; i++) {
+      common += burned2(burned_ids1(0, i), burned_ids1(1, i));
+    }
+  } else {
+    for(int i = 0; i < size2; i++) {
+      common += burned1(burned_ids2(0, i), burned_ids2(1, i));
+    }
   }
 
-  colnames(similarity) = names;
-  return similarity;
+  float overlap_sp = common / (size1 + size2 - common);
+
+  return overlap_sp;
 }

@@ -6,30 +6,24 @@ using namespace Rcpp;
 
 #include <vector>
 
-// Constants ---------------------------------------------------------------
+// Structs and enums -------------------------------------------------------
 
-// Elevation data to standardize distance between pixels
-constexpr float elevation_mean = 1163.3;
-constexpr float elevation_sd = 399.5;
-
-// Structs ans enums -------------------------------------------------------
-
-// Terrain coefficients names
-enum terrain_names {
-  northing,
-  elev,
-  windir,
-  slope
+// Coefficients names
+enum coef_names {
+  intercept,
+  b_vfi,
+  b_tfi,
+  b_slope,
+  b_wind
 };
 
-// Vegetation coefficients names
-enum veg_names {
-  shrubland,
-  subalpine,
-  wet,
-  dry_a, // araucaria
-  dry_b, // cypress
-  steppe
+// Landscape layers names
+enum land_names {
+  vfi,
+  tfi,
+  elev,
+  wdir,
+  wspeed
 };
 
 struct burned_res {
@@ -38,38 +32,64 @@ struct burned_res {
   int end;
 };
 
-struct burned_compare {
+struct burned_compare { // used for spatial overlap
   IntegerMatrix burned_layer;
   IntegerMatrix burned_ids;
-  NumericVector counts_veg; // need to be numeric to compute divisions later
+};
+
+struct burned_compare_veg { // used for metrics taking vegetation into account
+  IntegerMatrix burned_layer;
+  IntegerMatrix burned_ids;
+  NumericVector counts_veg; // numeric to perform division later.
 };
 
 // Functions ---------------------------------------------------------------
 
 burned_res simulate_fire_internal(
-  const IntegerMatrix& vegetation,
-  const arma::fcube& terrain,
+  const arma::fcube& landscape,
+  const IntegerMatrix& burnable,
   const IntegerMatrix& ignition_cells,
   arma::frowvec coef,
-  int n_veg_types = 6,
   float upper_limit = 1.0,
   double (*prob_fn)(double, double) = R::rbinom
 );
 
 burned_compare simulate_fire_compare_internal(
-  const IntegerMatrix& vegetation,
-  const arma::fcube& terrain,
+  const arma::fcube& landscape,
+  const IntegerMatrix& burnable,
   const IntegerMatrix& ignition_cells,
   arma::frowvec coef,
-  int n_veg_types = 6,
   float upper_limit = 1.0
 );
 
+burned_compare_veg simulate_fire_compare_veg_internal(
+    const arma::fcube& landscape,
+    const IntegerMatrix& burnable,
+    const IntegerMatrix& ignition_cells,
+    arma::frowvec coef,
+    const IntegerMatrix& vegetation,
+    int n_veg_types = 6,
+    float upper_limit = 1.0
+);
+
 List simulate_fire_compare(
-  const IntegerMatrix& vegetation,
-  const arma::fcube& terrain,
+  const arma::fcube& landscape,
+  const IntegerMatrix& burnable,
   const IntegerMatrix& ignition_cells,
   arma::frowvec coef,
-  int n_veg_types = 6,
   float upper_limit = 1.0
 );
+
+List simulate_fire_compare_veg(
+    const arma::fcube& landscape,
+    const IntegerMatrix& burnable,
+    const IntegerMatrix& ignition_cells,
+    arma::frowvec coef,
+    const IntegerMatrix& vegetation,
+    int n_veg_types = 6,
+    float upper_limit = 1.0
+);
+
+/*
+ * Default arguments are provided here, not at the cpp file.
+ */

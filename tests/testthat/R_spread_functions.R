@@ -9,15 +9,10 @@ library(terra)
 
 # Define a few constants ------------------------------------------------
 
-# Elevation data to standardize distance between pixels
-elevation_mean <- 1163.3
-elevation_sd <- 399.5
-
 # Distance between pixels, in m / elevation_sd.
 # 30 m is the landscape resolution.
-distances_raw <- rep(30, 8)
-distances_raw[c(1, 3, 6, 7)] <- distances_raw[c(1, 3, 6, 7)] * sqrt(2)
-distances <- distances_raw / elevation_sd
+distances <- rep(30, 8)
+distances[c(1, 3, 6, 8)] <- distances[c(1, 3, 6, 8)] * sqrt(2)
 
 # Angles between cells to compute wind effect. As the wind direction is
 # the direction from which the wind comes, these angles must represent where the
@@ -40,31 +35,30 @@ moves <- matrix(c(-1,-1,-1,  0,0,  1,1,1,
 #  4, NA, 5,
 #  6, 7, 8)
 
-# Terrain coefficients names
-northing_id <- 1
-elev_id     <- 2
-windir_id   <- 3
-slope_id    <- 4
+# Coefficients names
+intercept <- 1
+b_vfi     <- 2
+b_tfi     <- 3
+b_slope   <- 4
+b_wind    <- 5
 
-# Vegetation coefficients names
-shrubland_id <- 1
-subalpine_id <- 2
-wet_id       <- 3
-dry_a_id     <- 4 # araucaria
-dry_b_id     <- 5 # cypress
-steppe_id    <- 6
+# Landscape layers names
+vfi    <- 1
+tfi    <- 2
+elev   <- 3
+wdir   <- 4
+wspeed <- 5
 
 
 # Raster-matrix-array conversion functions --------------------------------
 
-# Terrain 3D array from landscape SpatRaster. The first layer is vegetation,
-# so it's ignored
+# Make a 3D array from landscape SpatRaster.
 land_cube <- function(x) {
   v <- values(x)
-  a <- array(NA, dim = c(nrow(x), ncol(x), nlyr(x)-1),
-             dimnames = list(row = NULL, col = NULL, layer = names(x)[-1]))
-  for(l in 2:nlyr(x)) a[, , l-1] <- matrix(v[, l], nrow(x), ncol(x),
-                                           byrow = TRUE)
+  a <- array(NA, dim = c(nrow(x), ncol(x), nlyr(x)),
+             dimnames = list(row = NULL, col = NULL, layer = names(x)))
+  for(l in 1:nlyr(x)) a[, , l] <- matrix(v[, l], nrow(x), ncol(x),
+                                         byrow = TRUE)
   return(a)
 }
 
@@ -83,15 +77,9 @@ rast_from_mat <- function(m, fill_raster) { # fill_raster is a SpatRaster from t
 #' @description Calculates the probability of a cell spreading fire to another.
 #' @return float [0, 1] indicating the probability.
 #'
-#' @param int vegetation_type: vegetation type of the target cell.
-#' @param arma::frowvec terrain_burning: terrain data from burning cell.
-#' @param arma::frowvec terrain_neighbour: terrain data from target neighbour.
-#' @param arma::frowvec coef_veg: intercepts in logistic regression associated
-#'   to each vegetation type. To aggregate vegetation types (e.g., dry_forest =
-#'   dry_forest_a or dry_forest_b), the same values are assigned to the
-#'   aggregated classes.
-#' @param arma::frowvec coef_terrain: slopes in logistic regression related
-#'   multiplying the terrain predictors.
+#' @param arma::frowvec landscape_burning: data from burning cell.
+#' @param arma::frowvec landscape_neighbour: data from target neighbour.
+#' @param arma::frowvec coef: logistic regression parameters.
 #' @param int position: relative position of the neighbour in relation to the
 #' burning cell. The eight neighbours are labelled from 0 to 7 beginning from
 #' the upper-left one (by row):
@@ -104,31 +92,28 @@ rast_from_mat <- function(m, fill_raster) { # fill_raster is a SpatRaster from t
 #'   1 makes absurdly large fires; 0.5 is preferred).
 
 spread_one_cell_r <- function(
-    vegetation_type, # starts at 0
-    terrain_burning,
-    terrain_neighbour,
-    coef_veg,
-    coef_terrain,
+    landscape_burning,
+    landscape_neighbour,
+    coef,
     position,
     upper_limit = 1.0
   ) {
 
   # wind term
-  wind_term = cos(angles[position] - terrain_burning[windir_id])
+  wdir_term = cos(angles[position] - landscape_burning[wdir])
 
   # slope term (from elevation and distance)
   slope_term = sin(atan(
-    (terrain_neighbour[elev_id] - terrain_burning[elev_id]) / distances[position]
+    (landscape_neighbour[elev] - landscape_burning[elev]) / distances[position]
   ))
 
   # compute linear predictor
   linpred <-
-    coef_veg[vegetation_type + 1] + # vegetation intercept, add 1 because
-                                    # vegetation classes start at 0
-    coef_terrain[northing_id] * terrain_neighbour[northing_id] +
-    coef_terrain[elev_id]     * terrain_neighbour[elev_id] +
-    coef_terrain[windir_id]   * wind_term +
-    coef_terrain[slope_id]    * slope_term;
+    coef[intercept] +
+    coef[b_vfi] * landscape_neighbour[vfi] +
+    coef[b_tfi] * landscape_neighbour[tfi] +
+    coef[b_slope] * slope_term +
+    coef[b_wind] * wdir_term * landscape_burning[wspeed];
 
   # burn probability
   probs <- plogis(linpred) * upper_limit
@@ -153,18 +138,15 @@ spread_one_cell_r <- function(
 #'     indicating its row (row1) and column (row2) in the landscape,
 #'   int end, the number of burned pixels.
 
-#' @param IntegerMatrix vegetation: integer matrix representing the vegetation
-#'   type. 99 is non-burnable, and valid values are {0, ..., n_veg_types - 1}.
-#' @param SpatRaster[terra] terrain: raster with terrain data, where each layer
-#'   is a predictor: {northing, elevation, wind direction}. Slope is absent
-#'   because it's directional, so it's computed during the simulation.
-#'   It is meant to be turned into a 3D-array [rows, cols, layers], but having
-#'   the terra object is convenient for plotting the progress.
-#' @param int n_veg_types: integer indicating the number of vegetation types
-#'   considered by the model (not just those present in the focal landscape).
-#'   used to read properly the vegetation- and non-vegetation parameters in
-#'   coef.
-#'
+#' @param SpatRaster[terra] landscape: predictor variables or variables used to
+#'   compute the actual predictors.
+#'     vfi: vegetation flammability index,
+#'     tfi: topographic flammability index,
+#'     elev: elevation (m), used to compute directional slope effect,
+#'     wdir: direction from where the wind blows (°),
+#'     wspeed: wind speed (m/s).
+#' @param IntegerMatrix burnable: binary layer indicating cells available to
+#'   burn.
 #' @param IntegerMatrix ignition_cells(2, burning_cells): row and column id for
 #'   the cell(s) where the fire begun. First row has the row_id, second row has
 #'   the col_id.
@@ -177,36 +159,25 @@ spread_one_cell_r <- function(
 #'   or not (set to FALSE by default).
 
 simulate_fire_r <- function(
-    vegetation,
-    terrain,
+    landscape,
+    burnable,
     ignition_cells,
     coef,
-    n_veg_types = 6,
     upper_limit = 1.0,
     plot_animation = FALSE
   ) {
 
-  # separate vegetation and terrain coefficients
-  coef_veg = coef[1:n_veg_types]
-  coef_terrain = coef[(n_veg_types + 1) : length(coef)];
-
   # define landscape dimensions
-  n_row <- nrow(vegetation)
-  n_col <- ncol(vegetation)
+  n_row <- nrow(landscape)
+  n_col <- ncol(landscape)
   n_cell <- n_row * n_col
-  n_layers <- nlyr(terrain)
+  n_layers <- nlyr(landscape)
 
-  # turn terrain into numeric array
-  terrain_arr <- array(NA, dim = c(n_row, n_col, n_layers))
-  terrain_values <- terra::values(terrain) # get values in matrix form
-  for(l in 1:n_layers) {
-    terrain_arr[, , l] <- matrix(terrain_values[, l], n_row, n_col,
-                                   byrow = TRUE) # byrow because terra provides
-    # the values this way.
-  }
+  # turn landscape into numeric array
+  landscape_arr <- land_cube(landscape)
 
   # Create burn layer, which will be exported.
-  burned_bin = matrix(0, n_row, n_col)
+  burned_bin <- matrix(0, n_row, n_col)
 
   # Make burning_ids matrix
   burning_ids <- matrix(NA, 2, n_cell)
@@ -224,7 +195,7 @@ simulate_fire_r <- function(
   end <- ncol(ignition_cells)
 
   # Fire raster for plotting
-  burn_raster <- terrain[[1]]
+  burn_raster <- landscape[[1]]
   values(burn_raster) <- 0
 
   # get burning cells ids
@@ -255,7 +226,7 @@ simulate_fire_r <- function(
     # spread from burning pixels
     for(b in start:end) {
       # Get burning_cells' data
-      terrain_burning <- terrain_arr[burning_ids[1, b], burning_ids[2, b], ];
+      landscape_burning <- landscape_arr[burning_ids[1, b], burning_ids[2, b], ];
 
       # get neighbours (adjacent computation here)
       neighbours <- burning_ids[, b] + moves
@@ -270,25 +241,20 @@ simulate_fire_r <- function(
         )
         if(out_of_range) next # (jumps to next iteration if TRUE)
 
-        # Get vegetation class to know whether it's burnable
-        veg_target <- vegetation[neighbours[1, n], neighbours[2, n]]
-
         # Is the cell burnable?
         burnable_cell <-
           (burned_bin[neighbours[1, n], neighbours[2, n]] == 0) &
-          (veg_target < 99) # 99 is non-burnable
+          (burnable[neighbours[1, n], neighbours[2, n]] == 1)
         if(!burnable_cell) next
 
         # obtain data from the neighbour
-        terrain_neighbour = terrain_arr[neighbours[1, n], neighbours[2, n], ];
+        landscape_neighbour = landscape_arr[neighbours[1, n], neighbours[2, n], ];
 
         # simulate fire
         burn <- spread_one_cell_r(
-          veg_target,
-          terrain_burning,
-          terrain_neighbour,
-          coef_veg,
-          coef_terrain,
+          landscape_burning,
+          landscape_neighbour,
+          coef,
           n, # neighbour position (in 1:8)
           upper_limit
         )["burn"] # because it returns also the probability
@@ -339,33 +305,22 @@ simulate_fire_r <- function(
 # cpp is caused by seed problems
 
 simulate_fire_deterministic_r <- function(
-    vegetation,
-    terrain,
+    landscape,
+    burnable,
     ignition_cells,
     coef,
-    n_veg_types = 6,
     upper_limit = 1.0,
     plot_animation = FALSE
 ) {
 
-  # separate vegetation and terrain coefficients
-  coef_veg = coef[1:n_veg_types]
-  coef_terrain = coef[(n_veg_types + 1) : length(coef)];
-
   # define landscape dimensions
-  n_row <- nrow(vegetation)
-  n_col <- ncol(vegetation)
+  n_row <- nrow(landscape)
+  n_col <- ncol(landscape)
   n_cell <- n_row * n_col
-  n_layers <- nlyr(terrain)
+  n_layers <- nlyr(landscape)
 
-  # turn terrain into numeric array
-  terrain_arr <- array(NA, dim = c(n_row, n_col, n_layers))
-  terrain_values <- terra::values(terrain) # get values in matrix form
-  for(l in 1:n_layers) {
-    terrain_arr[, , l] <- matrix(terrain_values[, l], n_row, n_col,
-                                 byrow = TRUE) # byrow because terra provides
-    # the values this way.
-  }
+  # turn landscape into numeric array
+  landscape_arr <- land_cube(landscape)
 
   # Create burn layer, which will be exported.
   burned_bin = matrix(0, n_row, n_col)
@@ -386,7 +341,7 @@ simulate_fire_deterministic_r <- function(
   end <- ncol(ignition_cells)
 
   # Fire raster for plotting
-  burn_raster <- terrain[[1]]
+  burn_raster <- landscape[[1]]
   values(burn_raster) <- 0
 
   # get burning cells ids
@@ -417,7 +372,7 @@ simulate_fire_deterministic_r <- function(
     # spread from burning pixels
     for(b in start:end) {
       # Get burning_cells' data
-      terrain_burning <- terrain_arr[burning_ids[1, b], burning_ids[2, b], ];
+      landscape_burning <- landscape_arr[burning_ids[1, b], burning_ids[2, b], ];
 
       # get neighbours (adjacent computation here)
       neighbours <- burning_ids[, b] + moves
@@ -432,28 +387,23 @@ simulate_fire_deterministic_r <- function(
         )
         if(out_of_range) next # (jumps to next iteration if TRUE)
 
-        # Get vegetation class to know whether it's burnable
-        veg_target <- vegetation[neighbours[1, n], neighbours[2, n]]
-
         # Is the cell burnable?
         burnable_cell <-
           (burned_bin[neighbours[1, n], neighbours[2, n]] == 0) &
-          (veg_target < 99) # 99 is non-burnable
+          (burnable[neighbours[1, n], neighbours[2, n]] == 1)
         if(!burnable_cell) next
 
         # obtain data from the neighbour
-        terrain_neighbour = terrain_arr[neighbours[1, n], neighbours[2, n], ];
+        landscape_neighbour = landscape_arr[neighbours[1, n], neighbours[2, n], ];
 
         # simulate fire
         burn <- spread_one_cell_r(
-          veg_target,
-          terrain_burning,
-          terrain_neighbour,
-          coef_veg,
-          coef_terrain,
+          landscape_burning,
+          landscape_neighbour,
+          coef,
           n, # neighbour position (in 1:8)
           upper_limit
-        )#["burn"] # because it returns also the probability
+        )
 
         # make deterministic!
         if(burn["probs"] < 0.5000000000) next
