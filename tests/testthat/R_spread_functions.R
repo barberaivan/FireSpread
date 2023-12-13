@@ -154,6 +154,12 @@ spread_one_cell_r <- function(
 #'   spread probability as a function of covariates.
 #' @param float upper_limit: upper limit for spread probability (setting to
 #'   1 makes absurdly large fires).
+#' @param int steps: maximum number of simulation steps allowed. If 0
+#'   (the default), a large number is used to avoid limiting fire spread.
+#'   The burning of ignition points is considered the first step, so steps = 1
+#'   burns only the ignition points. Bear in mind that the simulation may stop
+#'   because there are no more burning cells, without reaching the maximum steps
+#'   allowed.
                                                                                                                                     #'   testing.)
 #' @param bool plot_animation: whether to plot the fire progress while running
 #'   or not (set to FALSE by default).
@@ -164,6 +170,7 @@ simulate_fire_r <- function(
     ignition_cells,
     coef,
     upper_limit = 1.0,
+    steps = 0,
     plot_animation = FALSE
   ) {
 
@@ -172,6 +179,9 @@ simulate_fire_r <- function(
   n_col <- ncol(landscape)
   n_cell <- n_row * n_col
   n_layers <- nlyr(landscape)
+
+  # non-limited steps
+  if(steps == 0) steps <- n_cell * 10
 
   # turn landscape into numeric array
   landscape_arr <- land_cube(landscape)
@@ -205,23 +215,26 @@ simulate_fire_r <- function(
 
   values(burn_raster)[burning_cells] <- 1
   if (plot_animation) {
-    plot(burn_raster, col = c("green", "red"), main = "step 0")
+    plot(burn_raster, col = c("green", "red"), main = "step 1")
   }
 
   # spread
-  j <- 1
+  step <- 1
   burning_size <- length(burning_cells)
 
-  while(burning_size > 0) {
+  while(burning_size > 0 & step < steps) {
+    # update step
+    step <- step + 1
+
     # Loop over all the burning cells to burn their neighbours. Use end_forward
     # to update the last position in burning_ids within this loop, without
     # compromising the loop's integrity.
     end_forward <- end
 
-    # Loop over burning cells in the cycle
+    # Loop over burning cells in the step
 
     # b is going to keep the position in burning_ids that have to be evaluated
-    # in this burn cycle
+    # in this burn step
 
     # spread from burning pixels
     for(b in start:end) {
@@ -271,7 +284,7 @@ simulate_fire_r <- function(
         burned_bin[neighbours[1, n], neighbours[2, n]] <- 1
       } # end loop over neighbours of burning cell b
 
-    } # end loop over burning cells from this cycle (j)
+    } # end loop over burning cells from this step
 
     # update start and end
     start <- end + 1
@@ -282,7 +295,7 @@ simulate_fire_r <- function(
     values(burn_raster)[burning_cells] <- 2
 
     if(burning_size > 0) {
-      # update burning_cells (this correspond to the next cycle)
+      # update burning_cells (this correspond to the next step)
       burning_cells <- cellFromRowCol(burn_raster,
                                       row = burning_ids[1, start:end],
                                       col = burning_ids[2, start:end])
@@ -290,11 +303,9 @@ simulate_fire_r <- function(
     }
 
     if (plot_animation) {
-      plot(burn_raster, col = c("green", "red", "black"), main = paste("step", j))
+      plot(burn_raster, col = c("green", "red", "black"), main = paste("step", step))
     }
 
-    # update cycle step
-    j <- j + 1
   }
 
   return(burned_bin)
@@ -310,6 +321,7 @@ simulate_fire_deterministic_r <- function(
     ignition_cells,
     coef,
     upper_limit = 1.0,
+    steps = 0,
     plot_animation = FALSE
 ) {
 
@@ -318,6 +330,9 @@ simulate_fire_deterministic_r <- function(
   n_col <- ncol(landscape)
   n_cell <- n_row * n_col
   n_layers <- nlyr(landscape)
+
+  # non-limited steps
+  if(steps == 0) steps <- n_cell * 10
 
   # turn landscape into numeric array
   landscape_arr <- land_cube(landscape)
@@ -351,23 +366,26 @@ simulate_fire_deterministic_r <- function(
 
   values(burn_raster)[burning_cells] <- 1
   if (plot_animation) {
-    plot(burn_raster, col = c("green", "red"), main = "step 0")
+    plot(burn_raster, col = c("green", "red"), main = "step 1")
   }
 
   # spread
-  j <- 1
+  step <- 1
   burning_size <- length(burning_cells)
 
-  while(burning_size > 0) {
+  while(burning_size > 0 & step < steps) {
+    # update burn step
+    step <- step + 1
+
     # Loop over all the burning cells to burn their neighbours. Use end_forward
     # to update the last position in burning_ids within this loop, without
     # compromising the loop's integrity.
     end_forward <- end
 
-    # Loop over burning cells in the cycle
+    # Loop over burning cells in the step
 
     # b is going to keep the position in burning_ids that have to be evaluated
-    # in this burn cycle
+    # in this burn step
 
     # spread from burning pixels
     for(b in start:end) {
@@ -418,7 +436,7 @@ simulate_fire_deterministic_r <- function(
         burned_bin[neighbours[1, n], neighbours[2, n]] <- 1
       } # end loop over neighbours of burning cell b
 
-    } # end loop over burning cells from this cycle (j)
+    } # end loop over burning cells from this step
 
     # update start and end
     start <- end + 1
@@ -429,7 +447,7 @@ simulate_fire_deterministic_r <- function(
     values(burn_raster)[burning_cells] <- 2
 
     if(burning_size > 0) {
-      # update burning_cells (this correspond to the next cycle)
+      # update burning_cells (this correspond to the next step)
       burning_cells <- cellFromRowCol(burn_raster,
                                       row = burning_ids[1, start:end],
                                       col = burning_ids[2, start:end])
@@ -437,11 +455,9 @@ simulate_fire_deterministic_r <- function(
     }
 
     if (plot_animation) {
-      plot(burn_raster, col = c("green", "red", "black"), main = paste("step", j))
+      plot(burn_raster, col = c("green", "red", "black"), main = paste("step", step))
     }
 
-    # update cycle step
-    j <- j + 1
   }
 
   return(burned_bin)

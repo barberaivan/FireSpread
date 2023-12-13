@@ -31,13 +31,16 @@ using namespace Rcpp;
  * The coef vector holds all the parameters for the logistic regression:
  * {intercept, b_vfi, b_tfi, b_slope, b_wind},
  *
- * The interannual climatic variability is represented through the
- * summer-average (dec-march) FWI anomaly at the pixel level, and is treated as
+ * The climate is represented by the FWI, and is treated as
  * constant within a fire or landscape. Its value at the ignition point
  * is used to define the mean of a fire-level random effect, with a linear
  * function. This is not included as a pixel-level variable because of its low
  * resolution, which made its values almost constant within landscapes, which
- * would generete high correlation between the fwi and vegetation parameters.
+ * would generate high correlation between the fwi and other parameters.
+ *
+ * The simulations stops when there are no more burning cells or when a number
+ * of pre-defined steps are completed. This could represent the duration of
+ * fire-prone weather, which is a latent variable.
  *
  * At the bottom there are functions used to simulate and compare fires.
  * Those ending in _veg count the burned cells by vegetation type. To use them
@@ -195,6 +198,12 @@ int spread_one_cell(
 //'   spread probability as a function of covariates.
 //' @param float upper_limit: upper limit for spread probability (setting to
 //'   1 makes absurdly large fires).
+//' @param int steps: maximum number of simulation steps allowed. If 0
+//'   (the default), a large number is used to avoid limiting fire spread.
+//'   The burning of ignition points is considered the first step, so steps = 1
+//'   burns only the ignition points. Bear in mind that the simulation may stop
+//'   because there are no more burning cells, without reaching the maximum steps
+//'   allowed.
 //' @param function [unnamed]: function evaluating the burn probability. By
 //'   default, it's R::rbinom(), but can be set to a deterministic behaviour to
 //'   test whether the probability computation matches R's function. (Just for
@@ -206,6 +215,7 @@ burned_res simulate_fire_internal(
     const IntegerMatrix& ignition_cells,
     arma::frowvec coef,
     float upper_limit,
+    int steps,
     double (*prob_fn)(double, double)
   ) {
 
@@ -214,9 +224,12 @@ burned_res simulate_fire_internal(
   int n_col = burnable.ncol();
   int n_cell = n_row * n_col;
 
+  // if zero steps are allowed, use a lot to avoid limiting the simulation
+  if(steps == 0) steps = n_cell * 10;
+
   // burned_ids [row-col, cell] will be filled with the row_col ids (rows) of the
   // burning pixels (columns). start and end integers will define the positions
-  // limits corresponding to the burning cells in every burn cycle.
+  // limits corresponding to the burning cells in every burn step.
   IntegerMatrix burned_ids(2, n_cell); // check it's filled with 0 // -2147483648 is NA_INTEGER
 
   int start = 0;
@@ -247,16 +260,23 @@ burned_res simulate_fire_internal(
     burned_bin(ignition_cells(0, i), ignition_cells(1, i)) = 1;
   }
 
-  while(burning_size > 0) {
+  // initialize simulation step, considering the ignition as the first one.
+  // The step is updated once the loop is entered.
+  int step = 1;
+
+  while(burning_size > 0 & step < steps) {
+    // update step
+    step += 1;
+
     // Loop over all the burning cells to burn their neighbours. Use end_forward
     // to update the last position in burned_ids within this loop, without
     // compromising the loop's integrity.
     int end_forward = end;
 
-    // Loop over burning cells in the cycle
+    // Loop over burning cells in the step
 
     // b is going to keep the position in burned_ids that have to be evaluated
-    // in this burn cycle
+    // in this burn step
     for(int b = start; b <= end; b++) {
 
       // Get burning_cell's data
@@ -312,7 +332,7 @@ burned_res simulate_fire_internal(
 
       } // end loop over neighbours of burning cell b
 
-    } // end loop over burning cells from this cycle
+    } // end loop over burning cells from this step
 
     // update start and end
     start = end + 1;
@@ -321,11 +341,11 @@ burned_res simulate_fire_internal(
 
   } // end while
 
-  return {burned_bin, burned_ids, end};
+  return {burned_bin, burned_ids, end, step};
 }
 
 // a similar function only returning a burned_layer with an integer by burn
-// cycle, used to animate the spread.
+// step, used to animate the spread.
 
 // [[Rcpp::export]]
 IntegerMatrix simulate_fire_animate(
@@ -333,7 +353,8 @@ IntegerMatrix simulate_fire_animate(
     const IntegerMatrix& burnable,
     const IntegerMatrix& ignition_cells,
     arma::frowvec coef,
-    float upper_limit = 1.0
+    float upper_limit = 1.0,
+    int steps = 0
 ) {
 
   // define landscape dimensions
@@ -341,9 +362,12 @@ IntegerMatrix simulate_fire_animate(
   int n_col = burnable.ncol();
   int n_cell = n_row * n_col;
 
+  // if zero steps are allowed, use a lot to avoid limiting the simulation
+  if(steps == 0) steps = n_cell * 10;
+
   // burned_ids [row-col, cell] will be filled with the row_col ids (rows) of the
   // burning pixels (columns). start and end integers will define the positions
-  // limits corresponding to the burning cells in every burn cycle.
+  // limits corresponding to the burning cells in every burn step.
   IntegerMatrix burned_ids(2, n_cell); // check it's filled with 0 // -2147483648 is NA_INTEGER
 
   int start = 0;
@@ -374,19 +398,22 @@ IntegerMatrix simulate_fire_animate(
     burned_step(ignition_cells(0, i), ignition_cells(1, i)) = 1;
   }
 
-  // initialize burning step
-  int step = 2;
+  // initialize simulation step, considering the ignition as the first one.
+  // The step is updated once the loop is entered.
+  int step = 1;
 
-  while(burning_size > 0) {
+  while(burning_size > 0 & step < steps) {
+    // update step
+    step += 1;
     // Loop over all the burning cells to burn their neighbours. Use end_forward
     // to update the last position in burned_ids within this loop, without
     // compromising the loop's integrity.
     int end_forward = end;
 
-    // Loop over burning cells in the cycle
+    // Loop over burning cells in the step
 
     // b is going to keep the position in burned_ids that have to be evaluated
-    // in this burn cycle
+    // in this burn step
     for(int b = start; b <= end; b++) {
 
       // Get burning_cell's data
@@ -442,15 +469,12 @@ IntegerMatrix simulate_fire_animate(
 
       } // end loop over neighbours of burning cell b
 
-    } // end loop over burning cells from this cycle
+    } // end loop over burning cells from this step
 
     // update start and end
     start = end + 1;
     end = end_forward;
     burning_size = end - start + 1;
-
-    // update step
-    step += 1;
 
   } // end while
 
@@ -467,14 +491,16 @@ IntegerMatrix simulate_fire(
     const IntegerMatrix& burnable,
     const IntegerMatrix& ignition_cells,
     arma::frowvec coef,
-    float upper_limit = 1.0
+    float upper_limit = 1.0,
+    int steps = 0
 ) {
   return simulate_fire_internal(
     landscape,
     burnable,
     ignition_cells,
     coef,
-    upper_limit
+    upper_limit,
+    steps
   ).burned_bin;
 }
 
@@ -489,7 +515,8 @@ IntegerMatrix simulate_fire_deterministic(
     const IntegerMatrix& burnable,
     const IntegerMatrix& ignition_cells,
     arma::frowvec coef,
-    float upper_limit = 1.0
+    float upper_limit = 1.0,
+    int steps = 0
   ) {
 
   return simulate_fire_internal(
@@ -498,6 +525,7 @@ IntegerMatrix simulate_fire_deterministic(
     ignition_cells,
     coef,
     upper_limit,
+    steps,
     [](double _, double x) { return (double)(x >= 0.5); }
   ).burned_bin;
 }
@@ -523,7 +551,8 @@ burned_compare simulate_fire_compare_internal(
     const IntegerMatrix& burnable,
     const IntegerMatrix& ignition_cells,
     arma::frowvec coef,
-    float upper_limit
+    float upper_limit,
+    int steps
 ) {
 
   burned_res burned = simulate_fire_internal(
@@ -531,14 +560,16 @@ burned_compare simulate_fire_compare_internal(
     burnable,
     ignition_cells,
     coef,
-    upper_limit
+    upper_limit,
+    steps
   );
 
   IntegerMatrix burned_bin = burned.burned_bin;
   IntegerMatrix burned_ids = burned.burned_ids;
   int end = burned.end;
+  int steps_used = burned.steps_used;
 
-  return {burned_bin, burned_ids(_, seq(0, end))};
+  return {burned_bin, burned_ids(_, seq(0, end)), steps_used};
 }
 
 burned_compare_veg simulate_fire_compare_veg_internal(
@@ -548,7 +579,8 @@ burned_compare_veg simulate_fire_compare_veg_internal(
     arma::frowvec coef,
     const IntegerMatrix& vegetation,
     int n_veg_types,
-    float upper_limit
+    float upper_limit,
+    int steps
 ) {
 
   burned_res burned = simulate_fire_internal(
@@ -556,12 +588,14 @@ burned_compare_veg simulate_fire_compare_veg_internal(
     burnable,
     ignition_cells,
     coef,
-    upper_limit
+    upper_limit,
+    steps
   );
 
   IntegerMatrix burned_bin = burned.burned_bin;
   IntegerMatrix burned_ids = burned.burned_ids;
   int end = burned.end;
+  int steps_used = burned.steps_used;
 
   // Compute burned area by vegetation type
   NumericVector counts_veg(n_veg_types);
@@ -570,7 +604,7 @@ burned_compare_veg simulate_fire_compare_veg_internal(
     counts_veg[veg_i] += 1;
   }
 
-  return {burned_bin, burned_ids(_, seq(0, end)), counts_veg};
+  return {burned_bin, burned_ids(_, seq(0, end)), counts_veg, steps_used};
 }
 
 // [[Rcpp::export]]
@@ -579,7 +613,8 @@ List simulate_fire_compare(
     const IntegerMatrix& burnable,
     const IntegerMatrix& ignition_cells,
     arma::frowvec coef,
-    float upper_limit
+    float upper_limit,
+    int steps
 ) {
 
   burned_compare burned_com = simulate_fire_compare_internal(
@@ -587,12 +622,14 @@ List simulate_fire_compare(
     burnable,
     ignition_cells,
     coef,
-    upper_limit
+    upper_limit,
+    steps
   );
 
   // List to return:
   List L = List::create(Named("burned_layer") = burned_com.burned_layer,
-                        Named("burned_ids") = burned_com.burned_ids);
+                        Named("burned_ids") = burned_com.burned_ids,
+                        Named("steps_used") = burned_com.steps_used);
 
   return L;
 }
@@ -605,7 +642,8 @@ List simulate_fire_compare_veg(
     arma::frowvec coef,
     const IntegerMatrix& vegetation,  // arguments with defaults go last.
     int n_veg_types,
-    float upper_limit
+    float upper_limit,
+    int steps
 ) {
 
   burned_compare_veg burned_com = simulate_fire_compare_veg_internal(
@@ -615,13 +653,15 @@ List simulate_fire_compare_veg(
     coef,
     vegetation,
     n_veg_types,
-    upper_limit
+    upper_limit,
+    steps
   );
 
   // List to return:
   List L = List::create(Named("burned_layer") = burned_com.burned_layer,
                         Named("burned_ids") = burned_com.burned_ids,
-                        Named("counts_veg") = burned_com.counts_veg);
+                        Named("counts_veg") = burned_com.counts_veg,
+                        Named("steps_used") = burned_com.steps_used);
 
   return L;
 }
