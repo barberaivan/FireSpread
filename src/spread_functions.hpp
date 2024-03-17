@@ -78,6 +78,7 @@ burned_compare_veg simulate_fire_compare_veg_internal(
     int steps = 0
 );
 
+// [[Rcpp::export]]
 List simulate_fire_compare(
   const arma::fcube& landscape,
   const IntegerMatrix& burnable,
@@ -87,6 +88,7 @@ List simulate_fire_compare(
   int steps = 0
 );
 
+// [[Rcpp::export]]
 List simulate_fire_compare_veg(
     const arma::fcube& landscape,
     const IntegerMatrix& burnable,
