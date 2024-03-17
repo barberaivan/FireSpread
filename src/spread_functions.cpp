@@ -264,9 +264,9 @@ burned_res simulate_fire_internal(
   // The step is updated once the loop is entered.
   int step = 1;
 
-  while(burning_size > 0 & step < steps) {
+  while(burning_size > 0 && step < steps) {
     // update step
-    step += 1;
+    step++;
 
     // Loop over all the burning cells to burn their neighbours. Use end_forward
     // to update the last position in burned_ids within this loop, without
@@ -295,15 +295,15 @@ burned_res simulate_fire_internal(
 
         // Is the cell in range?
         bool out_of_range = (
-          (neighbours[0][n] < 0) | (neighbours[0][n] >= n_row) | // check rows
-          (neighbours[1][n] < 0) | (neighbours[1][n] >= n_col)   // check cols
+          (neighbours[0][n] < 0) || (neighbours[0][n] >= n_row) || // check rows
+          (neighbours[1][n] < 0) || (neighbours[1][n] >= n_col)    // check cols
         );
         if(out_of_range) continue;
 
         // Is the cell burnable?
         bool burnable_cell =
-          (burned_bin(neighbours[0][n], neighbours[1][n]) == 0) & // not burned
-          (burnable(neighbours[0][n], neighbours[1][n]) == 1);    // burnable
+          (burned_bin(neighbours[0][n], neighbours[1][n]) == 0) && // not burned
+          (burnable(neighbours[0][n], neighbours[1][n]) == 1);     // burnable
         if(!burnable_cell) continue;
 
         // obtain data from the neighbour
@@ -325,7 +325,7 @@ burned_res simulate_fire_internal(
         // store id of recently burned cell and
         // set 1 in burned_bin
         // (but advance end_forward first)
-        end_forward += 1;
+        end_forward++;
         burned_ids(0, end_forward) = neighbours[0][n];
         burned_ids(1, end_forward) = neighbours[1][n];
         burned_bin(neighbours[0][n], neighbours[1][n]) = 1;
@@ -402,9 +402,9 @@ IntegerMatrix simulate_fire_animate(
   // The step is updated once the loop is entered.
   int step = 1;
 
-  while(burning_size > 0 & step < steps) {
+  while(burning_size > 0 && step < steps) {
     // update step
-    step += 1;
+    step++;
     // Loop over all the burning cells to burn their neighbours. Use end_forward
     // to update the last position in burned_ids within this loop, without
     // compromising the loop's integrity.
@@ -432,15 +432,15 @@ IntegerMatrix simulate_fire_animate(
 
         // Is the cell in range?
         bool out_of_range = (
-          (neighbours[0][n] < 0) | (neighbours[0][n] >= n_row) | // check rows
-          (neighbours[1][n] < 0) | (neighbours[1][n] >= n_col)   // check cols
+          (neighbours[0][n] < 0) || (neighbours[0][n] >= n_row) || // check rows
+          (neighbours[1][n] < 0) || (neighbours[1][n] >= n_col)    // check cols
         );
         if(out_of_range) continue;
 
         // Is the cell burnable?
         bool burnable_cell =
-          (burned_step(neighbours[0][n], neighbours[1][n]) == 0) & // not burned
-          (burnable(neighbours[0][n], neighbours[1][n]) == 1);     // burnable
+          (burned_step(neighbours[0][n], neighbours[1][n]) == 0) && // not burned
+          (burnable(neighbours[0][n], neighbours[1][n]) == 1);      // burnable
         if(!burnable_cell) continue;
 
         // obtain data from the neighbour
@@ -462,7 +462,7 @@ IntegerMatrix simulate_fire_animate(
         // store id of recently burned cell and
         // set step in burned_step
         // (but advance end_forward first)
-        end_forward += 1;
+        end_forward++;
         burned_ids(0, end_forward) = neighbours[0][n];
         burned_ids(1, end_forward) = neighbours[1][n];
         burned_step(neighbours[0][n], neighbours[1][n]) = step;
@@ -601,7 +601,7 @@ burned_compare_veg simulate_fire_compare_veg_internal(
   NumericVector counts_veg(n_veg_types);
   for(int i = 0; i <= end; i++) {
     int veg_i = vegetation(burned_ids(0, i), burned_ids(1, i));
-    counts_veg[veg_i] += 1;
+    counts_veg[veg_i]++;
   }
 
   return {burned_bin, burned_ids(_, seq(0, end)), counts_veg, steps_used};

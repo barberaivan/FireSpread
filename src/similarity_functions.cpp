@@ -200,7 +200,7 @@ NumericVector compare_fires_try(List fire1, List fire2,
 
 //' @title overlap_spatial
 //' @description Compute the spatial overlap index between two fires.
-//' @return flot overlap_sp.
+//' @return float overlap_sp.
 
 //' @param List fire1, List fire2: data from the fires to compare. This has the
 //'   same elements as the result from simulate_fire_compare:
@@ -221,11 +221,11 @@ float overlap_spatial(List fire1, List fire2) {
   IntegerMatrix burned_ids1 = fire1["burned_ids"];
   IntegerMatrix burned_ids2 = fire2["burned_ids"];
 
-  float size1 = burned_ids1.ncol();
-  float size2 = burned_ids2.ncol();
+  int size1 = burned_ids1.ncol();
+  int size2 = burned_ids2.ncol();
 
   // compute common pixels only in the smaller fire
-  float common = 0.0;
+  int common = 0;
 
   if(size1 <= size2) {
     for(int i = 0; i < size1; i++) {
@@ -237,7 +237,7 @@ float overlap_spatial(List fire1, List fire2) {
     }
   }
 
-  float overlap_sp = common / (size1 + size2 - common);
+  float overlap_sp = (float)common / ((float)(size1 + size2 - common));
 
   return overlap_sp;
 }
