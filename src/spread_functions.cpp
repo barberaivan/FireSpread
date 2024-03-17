@@ -607,7 +607,6 @@ burned_compare_veg simulate_fire_compare_veg_internal(
   return {burned_bin, burned_ids(_, seq(0, end)), counts_veg, steps_used};
 }
 
-// [[Rcpp::export]]
 List simulate_fire_compare(
     const arma::fcube& landscape,
     const IntegerMatrix& burnable,
@@ -634,7 +633,6 @@ List simulate_fire_compare(
   return L;
 }
 
-// [[Rcpp::export]]
 List simulate_fire_compare_veg(
     const arma::fcube& landscape,
     const IntegerMatrix& burnable,
