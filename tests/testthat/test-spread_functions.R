@@ -4,10 +4,11 @@ library(testthat)
 source("R_spread_functions.R")
 
 # create data for testing
-n_coef <- 5
 
-set.seed(2345)
-coefs <- rnorm(n_coef, 0, 3)
+n_veg <- 3 # vegetation types
+n_coef <- n_veg + 5 # it doesn't include steps
+n_layers <- n_coef - n_veg + 1
+layer_names <- c("vegetation", "ndvi", "north", "elev", "wdir", "wspeed")
 
 # landscape raster
 size <- 30
@@ -18,34 +19,29 @@ n_cells <- n_rows * n_cols
 
 landscape <- rast(
   ncol = n_cols, nrow = n_rows, res = res, crs = "EPSG:5343",
-  nlyrs = n_coef, # no intercept, but wind uses two lawers
+  nlyrs = n_layers,
   xmin = 0, xmax = res * n_cols, ymin = 0, ymax = res * n_rows,
-  names = c("vfi", "tfi", "elev", "wdir", "wspeed")
+  names = layer_names
 )
 
 # fill data
-landscape$vfi <- rnorm(ncell(landscape))
-landscape$tfi <- rnorm(ncell(landscape))
-landscape$elev <- runif(ncell(landscape), 0, 2200)
+landscape$vegetation <- sample(0:(n_veg-1), n_rows * n_cols, replace = TRUE)
+landscape$ndvi <- rnorm(ncell(landscape))
+landscape$north <- runif(ncell(landscape))
+landscape$elev <- rnorm(ncell(landscape))
 landscape$wdir <- runif(ncell(landscape), 0, 2 * pi) # radians
 landscape$wspeed <- abs(rnorm(ncell(landscape), 0, 2))
 
-burnable <- matrix(rbinom(n_rows * n_cols, size = 1, prob = 0.15),
-                   n_rows, byrow = T)
-
-# provide vegetation to compute all metrics
-n_veg_types <- 6
-vegetation <- matrix(sample(0:(n_veg_types-1), n_rows * n_cols, replace = TRUE),
-                     n_rows, byrow = T)
-
 ig_location <- matrix(rep(round(size / 2), 2), 2, 1)
+
+set.seed(2343)
+coefs <- rnorm(n_coef)
 
 
 test_that("Fire spread functions", {
   set.seed(30)
   fire_r <- simulate_fire_r(
     landscape = landscape, # use the SpatRaster
-    burnable = burnable,
     ignition_cells = ig_location,
     coef = coefs,
     upper_limit = 1.0
@@ -53,8 +49,8 @@ test_that("Fire spread functions", {
 
   set.seed(30)
   fire_cpp <- simulate_fire(
-    landscape = land_cube(landscape), # use the array
-    burnable = burnable,
+    landscape = land_cube(landscape)[, , -1], # use the array
+    vegetation = land_cube(landscape)[, , 1],
     ignition_cells = ig_location - 1,
     coef = coefs,
     upper_limit = 1.0
@@ -62,8 +58,8 @@ test_that("Fire spread functions", {
 
   set.seed(30)
   fire_compare_cpp <- simulate_fire_compare(
-    landscape = land_cube(landscape), # use the array
-    burnable = burnable,
+    landscape = land_cube(landscape)[, , -1], # use the array
+    vegetation = land_cube(landscape)[, , 1],
     ignition_cells = ig_location - 1,
     coef = coefs,
     upper_limit = 1.0
@@ -76,15 +72,14 @@ test_that("Fire spread functions", {
 test_that("Deterministic fire spread functions", {
   fire_r <- simulate_fire_deterministic_r(
     landscape = landscape, # use the SpatRaster
-    burnable = burnable,
     ignition_cells = ig_location,
     coef = coefs,
     upper_limit = 1.0
   )
 
   fire_cpp <- simulate_fire_deterministic(
-    landscape = land_cube(landscape), # use the array
-    burnable = burnable,
+    landscape = land_cube(landscape)[, , -1], # use the array
+    vegetation = land_cube(landscape)[, , 1],
     ignition_cells = ig_location - 1,
     coef = coefs,
     upper_limit = 1.0

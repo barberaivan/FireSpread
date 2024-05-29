@@ -1,18 +1,21 @@
 # Functions to spread fire, written in R to check results with C++.
-
-# The fire spread model is a cellular automata that spreads towards the 8-
-# neighbouring pixels.
-
-# For a deeper explanation of functions, see <spread_functions.cpp>.
+# For a detailed explanation, see <spread_functions.cpp>.
 
 library(terra)
 
-# Define a few constants ------------------------------------------------
+# Constants ----------------------------------------------------------------
+
+# Elevation data to standardize distance between pixels
+elevation_mean = 1118.848
+elevation_sd = 350.7474
+# from
+# <fire_spread/data/NDVI_regional_data/ndvi_optim_and_proportion.rds>
 
 # Distance between pixels, in m / elevation_sd.
 # 30 m is the landscape resolution.
 distances <- rep(30, 8)
 distances[c(1, 3, 6, 8)] <- distances[c(1, 3, 6, 8)] * sqrt(2)
+distances <- distances / elevation_sd
 
 # Angles between cells to compute wind effect. As the wind direction is
 # the direction from which the wind comes, these angles must represent where the
@@ -36,18 +39,24 @@ moves <- matrix(c(-1,-1,-1,  0,0,  1,1,1,
 #  6, 7, 8)
 
 # Coefficients names
-intercept <- 1
-b_vfi     <- 2
-b_tfi     <- 3
-b_slope   <- 4
-b_wind    <- 5
+forest    <- 1
+shrubland <- 2
+grassland <- 3
 
-# Landscape layers names
-vfi    <- 1
-tfi    <- 2
-elev   <- 3
-wdir   <- 4
-wspeed <- 5
+b_ndvi    <- 4
+b_north   <- 5
+b_elev    <- 6
+b_slope   <- 7
+b_wind    <- 8
+
+# steps (no number)
+
+# Landscape layers names, besides vegetation, must follow this order:
+ndvi   <- 1   # pi_ndvi[v] * (ndvi - optim[v]) ^ 2
+north  <- 2   # slope-weighted
+elev   <- 3   # standardized, but also used to compute slope
+wdir   <- 4   # radians
+wspeed <- 5   # m/s
 
 
 # Raster-matrix-array conversion functions --------------------------------
@@ -77,6 +86,8 @@ rast_from_mat <- function(m, fill_raster) { # fill_raster is a SpatRaster from t
 #' @description Calculates the probability of a cell spreading fire to another.
 #' @return float [0, 1] indicating the probability.
 #'
+#' @param int vegetation: vegetation class of the target cell, to obtain the
+#'   corresponding intercept from coef.
 #' @param arma::frowvec landscape_burning: data from burning cell.
 #' @param arma::frowvec landscape_neighbour: data from target neighbour.
 #' @param arma::frowvec coef: logistic regression parameters.
@@ -92,6 +103,7 @@ rast_from_mat <- function(m, fill_raster) { # fill_raster is a SpatRaster from t
 #'   1 makes absurdly large fires; 0.5 is preferred).
 
 spread_one_cell_r <- function(
+    vegetation,
     landscape_burning,
     landscape_neighbour,
     coef,
@@ -109,11 +121,12 @@ spread_one_cell_r <- function(
 
   # compute linear predictor
   linpred <-
-    coef[intercept] +
-    coef[b_vfi] * landscape_neighbour[vfi] +
-    coef[b_tfi] * landscape_neighbour[tfi] +
+    coef[vegetation + 1] + # vegetation classes start at zero
+    coef[b_ndvi] * landscape_neighbour[ndvi] +
+    coef[b_north] * landscape_neighbour[north] +
+    coef[b_elev] * landscape_neighbour[elev] +
     coef[b_slope] * slope_term +
-    coef[b_wind] * wdir_term * landscape_burning[wspeed];
+    coef[b_wind] * wdir_term * landscape_burning[wspeed]
 
   # burn probability
   probs <- plogis(linpred) * upper_limit
@@ -140,13 +153,17 @@ spread_one_cell_r <- function(
 
 #' @param SpatRaster[terra] landscape: predictor variables or variables used to
 #'   compute the actual predictors.
-#'     vfi: vegetation flammability index,
-#'     tfi: topographic flammability index,
-#'     elev: elevation (m), used to compute directional slope effect,
+#'     veg: vegetation class, in {0, 1, 2}. 99 is non-burnable. This layer is
+#'       separated within the function.
+#'     ndvi: ndvi-quadratic terms, computed as pi[v] * (ndvi - optim[v]) ^ 2.
+#'       pi[forest] = 1, while the others are lower. pi and optim are
+#'       estimated at
+#'       <fire_spread/data/NDVI_regional_data/ndvi_optim_and_proportion.rds>.
+#'     north: cos(aspect), weighted by slope steepness.
+#'     elev: elevation (standardized), used to compute directional slope
+#'       effect, but also included as a main effect.
 #'     wdir: direction from where the wind blows (°),
 #'     wspeed: wind speed (m/s).
-#' @param IntegerMatrix burnable: binary layer indicating cells available to
-#'   burn.
 #' @param IntegerMatrix ignition_cells(2, burning_cells): row and column id for
 #'   the cell(s) where the fire begun. First row has the row_id, second row has
 #'   the col_id.
@@ -166,7 +183,6 @@ spread_one_cell_r <- function(
 
 simulate_fire_r <- function(
     landscape,
-    burnable,
     ignition_cells,
     coef,
     upper_limit = 1.0,
@@ -184,7 +200,9 @@ simulate_fire_r <- function(
   if(steps == 0) steps <- n_cell * 10
 
   # turn landscape into numeric array
-  landscape_arr <- land_cube(landscape)
+  temp <- land_cube(landscape)
+  landscape_arr <- temp[, , -1] # without vegetation
+  vegetation <- temp[, , 1]
 
   # Create burn layer, which will be exported.
   burned_bin <- matrix(0, n_row, n_col)
@@ -254,10 +272,13 @@ simulate_fire_r <- function(
         )
         if(out_of_range) next # (jumps to next iteration if TRUE)
 
+        # Extract target vegetation
+        veg_target <- vegetation[neighbours[1, n], neighbours[2, n]]
+
         # Is the cell burnable?
         burnable_cell <-
           (burned_bin[neighbours[1, n], neighbours[2, n]] == 0) &
-          (burnable[neighbours[1, n], neighbours[2, n]] == 1)
+          (veg_target != 99)
         if(!burnable_cell) next
 
         # obtain data from the neighbour
@@ -265,6 +286,7 @@ simulate_fire_r <- function(
 
         # simulate fire
         burn <- spread_one_cell_r(
+          veg_target,
           landscape_burning,
           landscape_neighbour,
           coef,
@@ -317,7 +339,6 @@ simulate_fire_r <- function(
 
 simulate_fire_deterministic_r <- function(
     landscape,
-    burnable,
     ignition_cells,
     coef,
     upper_limit = 1.0,
@@ -335,7 +356,9 @@ simulate_fire_deterministic_r <- function(
   if(steps == 0) steps <- n_cell * 10
 
   # turn landscape into numeric array
-  landscape_arr <- land_cube(landscape)
+  temp <- land_cube(landscape)
+  landscape_arr <- temp[, , -1] # without vegetation
+  vegetation <- temp[, , 1]
 
   # Create burn layer, which will be exported.
   burned_bin = matrix(0, n_row, n_col)
@@ -405,10 +428,13 @@ simulate_fire_deterministic_r <- function(
         )
         if(out_of_range) next # (jumps to next iteration if TRUE)
 
+        # Extract target vegetation
+        veg_target <- vegetation[neighbours[1, n], neighbours[2, n]]
+
         # Is the cell burnable?
         burnable_cell <-
           (burned_bin[neighbours[1, n], neighbours[2, n]] == 0) &
-          (burnable[neighbours[1, n], neighbours[2, n]] == 1)
+          (veg_target != 99)
         if(!burnable_cell) next
 
         # obtain data from the neighbour
@@ -416,6 +442,7 @@ simulate_fire_deterministic_r <- function(
 
         # simulate fire
         burn <- spread_one_cell_r(
+          veg_target,
           landscape_burning,
           landscape_neighbour,
           coef,

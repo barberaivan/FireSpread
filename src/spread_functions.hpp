@@ -6,24 +6,38 @@ using namespace Rcpp;
 
 #include <vector>
 
+// Constants ---------------------------------------------------------------
+
+// Elevation data to standardize distance between pixels
+constexpr float elevation_mean = 1118.848;
+constexpr float elevation_sd = 350.7474;
+// from
+// <fire_spread/data/NDVI_regional_data/ndvi_optim_and_proportion.rds>
+
 // Structs and enums -------------------------------------------------------
 
-// Coefficients names
-enum coef_names {
-  intercept,
-  b_vfi,
-  b_tfi,
-  b_slope,
-  b_wind
+enum veg_names { // not used
+  forest,
+  shrubland,
+  grassland
 };
 
-// Landscape layers names
+// Coefficients names besides intercepts (they go from 0 to 2)
+enum coef_names {
+  b_ndvi = 3,
+  b_north = 4,
+  b_elev = 5,
+  b_slope = 6,
+  b_wind = 7
+};
+
+// Landscape layers names, besides vegetation
 enum land_names {
-  vfi,
-  tfi,
-  elev,
-  wdir,
-  wspeed
+  ndvi,   // pi_ndvi[v] * (ndvi - optim[v]) ^ 2
+  north,  // slope-weighted
+  elev,   // standardized, but also used to compute slope
+  wdir,   // radians
+  wspeed  // m/s
 };
 
 struct burned_res {
@@ -50,7 +64,7 @@ struct burned_compare_veg { // used for metrics taking vegetation into account
 
 burned_res simulate_fire_internal(
   const arma::fcube& landscape,
-  const IntegerMatrix& burnable,
+  const IntegerMatrix& vegetation,
   const IntegerMatrix& ignition_cells,
   arma::frowvec coef,
   float upper_limit = 1.0,
@@ -60,7 +74,7 @@ burned_res simulate_fire_internal(
 
 burned_compare simulate_fire_compare_internal(
   const arma::fcube& landscape,
-  const IntegerMatrix& burnable,
+  const IntegerMatrix& vegetation,
   const IntegerMatrix& ignition_cells,
   arma::frowvec coef,
   float upper_limit = 1.0,
@@ -69,11 +83,10 @@ burned_compare simulate_fire_compare_internal(
 
 burned_compare_veg simulate_fire_compare_veg_internal(
     const arma::fcube& landscape,
-    const IntegerMatrix& burnable,
+    const IntegerMatrix& vegetation,
     const IntegerMatrix& ignition_cells,
     arma::frowvec coef,
-    const IntegerMatrix& vegetation,
-    int n_veg_types = 6,
+    int n_veg_types = 3,
     float upper_limit = 1.0,
     int steps = 0
 );
@@ -81,7 +94,7 @@ burned_compare_veg simulate_fire_compare_veg_internal(
 // [[Rcpp::export]]
 List simulate_fire_compare(
   const arma::fcube& landscape,
-  const IntegerMatrix& burnable,
+  const IntegerMatrix& vegetation,
   const IntegerMatrix& ignition_cells,
   arma::frowvec coef,
   float upper_limit = 1.0,
@@ -91,15 +104,11 @@ List simulate_fire_compare(
 // [[Rcpp::export]]
 List simulate_fire_compare_veg(
     const arma::fcube& landscape,
-    const IntegerMatrix& burnable,
+    const IntegerMatrix& vegetation,
     const IntegerMatrix& ignition_cells,
     arma::frowvec coef,
-    const IntegerMatrix& vegetation,
-    int n_veg_types = 6,
+    int n_veg_types = 3,
     float upper_limit = 1.0,
     int steps = 0
 );
-
-/*
- * Default arguments are provided here, not at the cpp file.
- */
+// Default arguments are provided here, not at the cpp file.
