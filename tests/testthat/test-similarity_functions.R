@@ -7,9 +7,9 @@ test_that("Similarity functions", {
   # create data for testing
 
   n_veg <- 3 # vegetation types
-  n_coef <- n_veg + 5 # it doesn't include steps
-  n_layers <- n_coef - n_veg + 1
-  layer_names <- c("vegetation", "ndvi", "north", "elev", "wdir", "wspeed")
+  n_terrain <- 3
+  n_layers <- 1 + n_terrain
+  layer_names <- c("vegetation", "elev", "wdir", "wspeed")
 
   # landscape raster
   size <- 30
@@ -27,46 +27,45 @@ test_that("Similarity functions", {
 
   # fill data
   landscape$vegetation <- sample(0:(n_veg-1), n_rows * n_cols, replace = TRUE)
-  landscape$ndvi <- rnorm(ncell(landscape))
-  landscape$north <- runif(ncell(landscape))
-  landscape$elev <- rnorm(ncell(landscape))
+  landscape$elev <- rnorm(ncell(landscape), 1500, 300)
   landscape$wdir <- runif(ncell(landscape), 0, 2 * pi) # radians
   landscape$wspeed <- abs(rnorm(ncell(landscape), 0, 2))
 
   ig_location <- matrix(rep(round(size / 2), 2), 2, 1)
 
   set.seed(2343)
-  coefs <- rnorm(n_coef)
+  cv <- rnorm(n_veg)
+  ct <- rnorm(n_terrain)
 
   # simulate fires
   set.seed(1)
   fire_1 <- simulate_fire_compare_veg(
-    landscape = land_cube(landscape)[, , -1], # use the array
     vegetation = land_cube(landscape)[, , 1],
+    terrain = land_cube(landscape)[, , -1], # use the array
+    coef_veg = cv,
+    coef_terrain = ct,
     ignition_cells = ig_location - 1,
-    coef = coefs,
-    upper_limit = 1.0,
-    n_veg_types = n_veg
+    upper_limit = 1.0
   )
 
   set.seed(1)
   fire_1_ <- simulate_fire_compare_veg(
-    landscape = land_cube(landscape)[, , -1], # use the array
     vegetation = land_cube(landscape)[, , 1],
+    terrain = land_cube(landscape)[, , -1], # use the array
+    coef_veg = cv,
+    coef_terrain = ct,
     ignition_cells = ig_location - 1,
-    coef = coefs,
-    upper_limit = 1.0,
-    n_veg_types = n_veg
+    upper_limit = 1.0
   )
 
   set.seed(2)
   fire_2 <- simulate_fire_compare_veg(
-    landscape = land_cube(landscape)[, , -1], # use the array
     vegetation = land_cube(landscape)[, , 1],
+    terrain = land_cube(landscape)[, , -1], # use the array
+    coef_veg = cv,
+    coef_terrain = ct,
     ignition_cells = ig_location - 1,
-    coef = coefs,
-    upper_limit = 1.0,
-    n_veg_types = n_veg
+    upper_limit = 1.0
   )
 
   # a fire against itself, simulated with the same seed

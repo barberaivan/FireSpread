@@ -6,9 +6,9 @@ source("R_spread_functions.R")
 # create data for testing
 
 n_veg <- 3 # vegetation types
-n_coef <- n_veg + 5 # it doesn't include steps
-n_layers <- n_coef - n_veg + 1
-layer_names <- c("vegetation", "ndvi", "north", "elev", "wdir", "wspeed")
+n_terrain <- 3
+n_layers <- 1 + n_terrain
+layer_names <- c("vegetation", "elev", "wdir", "wspeed")
 
 # landscape raster
 size <- 30
@@ -26,42 +26,43 @@ landscape <- rast(
 
 # fill data
 landscape$vegetation <- sample(0:(n_veg-1), n_rows * n_cols, replace = TRUE)
-landscape$ndvi <- rnorm(ncell(landscape))
-landscape$north <- runif(ncell(landscape))
-landscape$elev <- rnorm(ncell(landscape))
+landscape$elev <- rnorm(ncell(landscape), 1500, 300)
 landscape$wdir <- runif(ncell(landscape), 0, 2 * pi) # radians
 landscape$wspeed <- abs(rnorm(ncell(landscape), 0, 2))
 
 ig_location <- matrix(rep(round(size / 2), 2), 2, 1)
 
 set.seed(2343)
-coefs <- rnorm(n_coef)
-
+cv <- rnorm(n_veg)
+ct <- rnorm(n_terrain - 1)
 
 test_that("Fire spread functions", {
   set.seed(30)
   fire_r <- simulate_fire_r(
-    landscape = landscape, # use the SpatRaster
+    landscape = landscape, # use the SpatRaster, with vegetation and terrain
+    coef_veg = cv,
+    coef_terrain = ct,
     ignition_cells = ig_location,
-    coef = coefs,
     upper_limit = 1.0
   )
 
   set.seed(30)
   fire_cpp <- simulate_fire(
-    landscape = land_cube(landscape)[, , -1], # use the array
     vegetation = land_cube(landscape)[, , 1],
+    terrain = land_cube(landscape)[, , -1], # use the array
+    coef_veg = cv,
+    coef_terrain = ct,
     ignition_cells = ig_location - 1,
-    coef = coefs,
     upper_limit = 1.0
   )
 
   set.seed(30)
   fire_compare_cpp <- simulate_fire_compare(
-    landscape = land_cube(landscape)[, , -1], # use the array
     vegetation = land_cube(landscape)[, , 1],
+    terrain = land_cube(landscape)[, , -1], # use the array
+    coef_veg = cv,
+    coef_terrain = ct,
     ignition_cells = ig_location - 1,
-    coef = coefs,
     upper_limit = 1.0
   )
 
@@ -72,16 +73,18 @@ test_that("Fire spread functions", {
 test_that("Deterministic fire spread functions", {
   fire_r <- simulate_fire_deterministic_r(
     landscape = landscape, # use the SpatRaster
+    coef_veg = cv,
+    coef_terrain = ct,
     ignition_cells = ig_location,
-    coef = coefs,
     upper_limit = 1.0
   )
 
   fire_cpp <- simulate_fire_deterministic(
-    landscape = land_cube(landscape)[, , -1], # use the array
     vegetation = land_cube(landscape)[, , 1],
+    terrain = land_cube(landscape)[, , -1], # use the array
+    coef_veg = cv,
+    coef_terrain = ct,
     ignition_cells = ig_location - 1,
-    coef = coefs,
     upper_limit = 1.0
   )
 
