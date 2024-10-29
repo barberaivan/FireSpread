@@ -16,20 +16,18 @@ using namespace Rcpp;
  * neighbouring pixels, with a burn probability defined by a logistic linear
  * model.
  *
- * The landscape is defined by a vegetation (integer) matrix, with classes from
- * 0 to n_veg_types - 1 (99 is non-burnable) and a terrain arma::fcube
- * (a 3D array), with the variables needed to compute slope and wind effects:
- * {elevation, wind direction, wind speed}.
- * Future versions could include an optional landscape with additional,
- * non-directional predictors, as northing, ndvi, elevation, etc. But fitting
- * such a model was complicated, so only veg types remain.
+ * The landscape is defined by a matrix of non-directional terms for the
+ * logit-spread-probability, which are computed before simulation.
+ * A terrain arma::fcube (a 3D array) stores the variables needed to compute
+ * slope and wind effects: {elevation, wind direction, wind speed}.
+ * A vegetation (integer) matrix, with classes from
+ * 0 to n_veg_types - 1 (99 is non-burnable) is provided to compute similarity
+ * metrics involving vegetation and also to define which pixels are burnable.
  *
- * The vegetation codes start at zero, and 99 is reserved for non-burnable.
- *
- * Parameters for vegetation (intercepts without reference) are passes by
- * coef_veg, while the effects of slope and wind are in coef_terrain, in
- * this order:
- * {slope, wind}
+ * Parameters for non-directional variables are multiplied by each predictor
+ * (and added up) before simulation, while the parameters affecting directional
+ * terms and the stpes parameters are passed through coef_terrain {slope, wind}
+ * and steps, respectively.
  *
  * The climate is represented by the FWI, and is treated as
  * constant within a fire or landscape. Its value at the ignition point
@@ -102,65 +100,79 @@ constexpr float angles[8] = {
 //' @title spread_one_cell_prob
 //' @description Calculates the probability of a cell spreading fire to another.
 //' @return float [0, 1] indicating the probability.
-//'
-//' @param int vegetation: vegetation class of the target cell, to subset
-//'   coef_veg.
-//' @param arma::frowvec coef_veg: intercepts for each vegetation type.
-//' @param arma::frowvec terrain_burning: terrain data from burning cell.
-//' @param arma::frowvec terrain_neighbour: terrain data from target neighbour.
-//' @param arma::frowvec coef_terrain: slopes for slope and wind in the
-//'   logistic regression
-//' @param int position: relative position of the target in relation to the
-//' burning cell. The eight neighbours are labelled from 0 to 7 beginning from
-//' the upper-left one (by row):
-//'   0 1 2
-//'   3   4
-//'   5 6 7.
+
+//' @param int vegetation: vegetation type in the target cell, coded with
+//'   integers starting at zero.
+//' @param arma::frowvec data_nd: non-directional variables, in the target
+//'   cell, which will be multiplied by coef_nd.
+//' @param arma::frowvec data_terrain_source: terrain data from source cell.
+//' @param arma::frowvec data_terrain_target: terrain data from target cell.
+//' @param arma::frowvec coef_intercepts: intercepts, one for each vegetation
+//'   type.
+//' @param arma::frowvec coef_nd: coefficient of non-directional variables.
+//' @param arma::frowvec coef_terrain: coefficients for slope and wind.
+//' @param int position: relative position of the target cell in relation to the
+//'   source cell. The eight neighbours are labelled from 0 to 7 beginning from
+//'   the upper-left one (by row):
+//'     0 1 2
+//'     3   4
+//'     5 6 7.
 //'   This is necessary to compute the slope and wind effects, as they
-//'   depend on the angle and distance between burning and target cells.
+//'   depend on the angle and distance between source and target cells.
 //' @param float upper_limit: upper limit for spread probability (setting to
-//'   1 makes absurdly large fires; 0.5 is preferred).
+//'   1 makes absurdly large fires if spread is not limited by steps; 0.5 is
+//'   preferred in that case.).
 
 // [[Rcpp::export]]
 float spread_one_cell_prob(
-  int vegetation,
-  arma::frowvec terrain_burning,
-  arma::frowvec terrain_neighbour,
-  arma::frowvec coef_veg,
-  arma::frowvec coef_terrain,
-  int position,
-  float upper_limit = 1.0
+    int vegetation,
+    arma::frowvec data_nd,
+    arma::frowvec data_terrain_source,
+    arma::frowvec data_terrain_target,
+    arma::frowvec coef_intercepts,
+    arma::fvec coef_nd,
+    arma::frowvec coef_terrain,
+    int position,
+    float upper_limit = 1.0
 ) {
 
   /* Reminder:
-   enum b_terrain {
-     b_slope,
-     b_wind
+   enum coef_terrain {
+   b_slope,
+   b_wind
    };
 
    enum terrain_names {
-     elev,   // m a.s.l.
-     wdir,   // radians
-     wspeed  // m/s
+   elev,   // m a.s.l.
+   wdir,   // radians
+   wspeed  // m/s
    };
-  */
+   */
 
   // wind direction term
-  float wind_term = cosf(angles[position] - terrain_burning[wdir]) *
-                    terrain_burning[wspeed] * coef_terrain[b_wind];
+  float wind_term = cosf(angles[position] - data_terrain_source[wdir]) *
+    data_terrain_source[wspeed] * coef_terrain[b_wind];
 
   // slope term (from elevation and distance), only present if uphill
   float slope_term = 0.0f;
-  float elev_diff = terrain_neighbour[elev] - terrain_burning[elev];
+  float elev_diff = data_terrain_target[elev] - data_terrain_source[elev];
   if(elev_diff > 0.0f) {
-   slope_term += sinf(atanf(elev_diff / distances[position])) *
-                 coef_terrain[b_slope];
+    slope_term += sinf(atanf(elev_diff / distances[position])) *
+      coef_terrain[b_slope];
   }
 
+  // non directional terms
+  float nd_term = dot(data_nd, coef_nd); // armadillo dot product
+  // float nd_term = 0.0f;
+  // for(int i = 0; i < coef_nd.size(); i++) {
+  //   nd_term += coef_nd[i] * data_nd[i];
+  // }
+
   // compute linear predictor
-  float linpred = coef_veg[vegetation] +
-                  slope_term +
-                  wind_term;
+  float linpred = coef_intercepts[vegetation] +
+    nd_term +
+    slope_term +
+    wind_term;
 
   // burn probability
   float prob = upper_limit / (1 + expf(-linpred));
@@ -173,20 +185,24 @@ float spread_one_cell_prob(
 
 // [[Rcpp::export]]
 int spread_one_cell(
-  int vegetation,
-  arma::frowvec terrain_burning,
-  arma::frowvec terrain_neighbour,
-  arma::frowvec coef_veg,
-  arma::frowvec coef_terrain,
-  int position,
-  float upper_limit = 1.0
+    int vegetation,
+    arma::frowvec data_nd,
+    arma::frowvec data_terrain_source,
+    arma::frowvec data_terrain_target,
+    arma::frowvec coef_intercepts,
+    arma::fvec coef_nd,
+    arma::frowvec coef_terrain,
+    int position,
+    float upper_limit = 1.0
 ) {
 
   float prob = spread_one_cell_prob(
     vegetation,
-    terrain_burning,
-    terrain_neighbour,
-    coef_veg,
+    data_nd,
+    data_terrain_source,
+    data_terrain_target,
+    coef_intercepts,
+    coef_nd,
     coef_terrain,
     position,
     upper_limit
@@ -209,13 +225,14 @@ int spread_one_cell(
 
 //' @param arma::fcube terrain: variables used to compute slope and wind
 //'   effects: {elevation (m), wind direction (radians), wind speed (m/s)}.
-//' @param IntegerMatrix vegetation: from 0 to n_veg_types, with 99 indicating
-//'   non-burnable.
+//' @param arma::fmat nd_terms: sum of non-directional terms in the linear
+//'   predictor [intercept, vfi, tfi].
 //' @param arma::frowvec coef_terrain: slope and wind parameters.
-//' @param arma::frowvec coef_veg: intercepts for each vegetation type.
 //' @param IntegerMatrix ignition_cells(2, burning_cells): row and column id for
 //'   the cell(s) where the fire begun. First row has the row_id, second row has
 //'   the col_id.
+//' @param IntegerMatrix vegetation: integers indicating vegetation type
+//'   {0, 1, ..., n_veg}, with 99 used for non-burnable.
 //' @param float upper_limit: upper limit for spread probability.
 //' @param int steps: maximum number of simulation steps allowed. If 0
 //'   (the default), a very large number is set so the simulation is not limited.
@@ -229,19 +246,21 @@ int spread_one_cell(
 //'   testing.)
 
 burned_res simulate_fire_internal(
-    const IntegerMatrix& vegetation,
-    const arma::fcube& terrain,
-    arma::frowvec coef_veg,
-    arma::frowvec coef_terrain,
+    const IntegerMatrix& layer_vegetation,
+    const arma::fcube& layer_nd,
+    const arma::fcube& layer_terrain,
+    arma::frowvec& coef_intercepts,
+    arma::fvec& coef_nd,
+    arma::frowvec& coef_terrain,
     const IntegerMatrix& ignition_cells,
     float upper_limit,
     int steps,
     double (*prob_fn)(double, double)
-  ) {
+) {
 
   // define landscape dimensions
-  int n_row = vegetation.nrow();
-  int n_col = vegetation.ncol();
+  int n_row = layer_vegetation.nrow();
+  int n_col = layer_vegetation.ncol();
   int n_cell = n_row * n_col;
 
   // if zero steps are allowed, use a lot to avoid limiting the simulation
@@ -300,7 +319,7 @@ burned_res simulate_fire_internal(
     for(int b = start; b <= end; b++) {
 
       // Get burning_cell's data
-      arma::frowvec terrain_burning = terrain.tube(burned_ids(0, b), burned_ids(1, b));
+      arma::frowvec terrain_source = layer_terrain.tube(burned_ids(0, b), burned_ids(1, b));
 
       int neighbours[2][8];
       // get neighbours (adjacent computation here)
@@ -316,14 +335,12 @@ burned_res simulate_fire_internal(
         // Is the cell in range?
         bool out_of_range = (
           (neighbours[0][n] < 0) || (neighbours[0][n] >= n_row) || // check rows
-          (neighbours[1][n] < 0) || (neighbours[1][n] >= n_col)    // check cols
+            (neighbours[1][n] < 0) || (neighbours[1][n] >= n_col)    // check cols
         );
         if(out_of_range) continue;
 
         // Is the cell burnable?
-
-        // Extract target vegetation
-        int veg_target = vegetation(neighbours[0][n], neighbours[1][n]);
+        int veg_target = layer_vegetation(neighbours[0][n], neighbours[1][n]);
 
         bool burnable_cell =
           (burned_bin(neighbours[0][n], neighbours[1][n]) == 0) && // not burned
@@ -331,17 +348,21 @@ burned_res simulate_fire_internal(
         if(!burnable_cell) continue;
 
         // obtain data from the neighbour
-        arma::frowvec terrain_neighbour = terrain.tube(neighbours[0][n],
-                                                       neighbours[1][n]);
+        arma::frowvec terrain_target = layer_terrain.tube(neighbours[0][n],
+                                                          neighbours[1][n]);
+        arma::frowvec nd_target = layer_nd.tube(neighbours[0][n],
+                                                neighbours[1][n]);
 
         // simulate fire
         float prob = spread_one_cell_prob(
           veg_target,
-          terrain_burning,
-          terrain_neighbour,
-          coef_veg,
+          nd_target,
+          terrain_source,
+          terrain_target,
+          coef_intercepts,
+          coef_nd,
           coef_terrain,
-          n,           // position argument, from 0 to 7
+          n,           // position
           upper_limit
         );
 
@@ -376,18 +397,20 @@ burned_res simulate_fire_internal(
 
 // [[Rcpp::export]]
 IntegerMatrix simulate_fire_animate(
-    const IntegerMatrix& vegetation,
-    const arma::fcube& terrain,
-    arma::frowvec coef_veg,
-    arma::frowvec coef_terrain,
+    const IntegerMatrix& layer_vegetation,
+    const arma::fcube& layer_nd,
+    const arma::fcube& layer_terrain,
+    arma::frowvec& coef_intercepts,
+    arma::fvec& coef_nd,
+    arma::frowvec& coef_terrain,
     const IntegerMatrix& ignition_cells,
-    float upper_limit = 1.0,
-    int steps = 0
+    float upper_limit,
+    int steps
 ) {
 
   // define landscape dimensions
-  int n_row = vegetation.nrow();
-  int n_col = vegetation.ncol();
+  int n_row = layer_vegetation.nrow();
+  int n_col = layer_vegetation.ncol();
   int n_cell = n_row * n_col;
 
   // if zero steps are allowed, use a lot to avoid limiting the simulation
@@ -445,7 +468,7 @@ IntegerMatrix simulate_fire_animate(
     for(int b = start; b <= end; b++) {
 
       // Get burning_cell's data
-      arma::frowvec terrain_burning = terrain.tube(burned_ids(0, b), burned_ids(1, b));
+      arma::frowvec terrain_source = layer_terrain.tube(burned_ids(0, b), burned_ids(1, b));
 
       int neighbours[2][8];
       // get neighbours (adjacent computation here)
@@ -461,14 +484,12 @@ IntegerMatrix simulate_fire_animate(
         // Is the cell in range?
         bool out_of_range = (
           (neighbours[0][n] < 0) || (neighbours[0][n] >= n_row) || // check rows
-          (neighbours[1][n] < 0) || (neighbours[1][n] >= n_col)    // check cols
+            (neighbours[1][n] < 0) || (neighbours[1][n] >= n_col)    // check cols
         );
         if(out_of_range) continue;
 
         // Is the cell burnable?
-
-        // Extract target vegetation
-        int veg_target = vegetation(neighbours[0][n], neighbours[1][n]);
+        int veg_target = layer_vegetation(neighbours[0][n], neighbours[1][n]);
 
         bool burnable_cell =
           (burned_step(neighbours[0][n], neighbours[1][n]) == 0) && // not burned
@@ -476,16 +497,21 @@ IntegerMatrix simulate_fire_animate(
         if(!burnable_cell) continue;
 
         // obtain data from the neighbour
-        arma::frowvec terrain_neighbour = terrain.tube(neighbours[0][n], neighbours[1][n]);
+        arma::frowvec terrain_target = layer_terrain.tube(neighbours[0][n],
+                                                          neighbours[1][n]);
+        arma::frowvec nd_target = layer_nd.tube(neighbours[0][n],
+                                                neighbours[1][n]);
 
         // simulate fire
         float prob = spread_one_cell_prob(
           veg_target,
-          terrain_burning,
-          terrain_neighbour,
-          coef_veg,
+          nd_target,
+          terrain_source,
+          terrain_target,
+          coef_intercepts,
+          coef_nd,
           coef_terrain,
-          n,           // position argument, from 0 to 7
+          n,           // position
           upper_limit
         );
 
@@ -521,23 +547,27 @@ IntegerMatrix simulate_fire_animate(
 // matrix.
 // [[Rcpp::export]]
 IntegerMatrix simulate_fire(
-    const IntegerMatrix& vegetation,
-    const arma::fcube& terrain,
-    arma::frowvec coef_veg,
-    arma::frowvec coef_terrain,
+    const IntegerMatrix& layer_vegetation,
+    const arma::fcube& layer_nd,
+    const arma::fcube& layer_terrain,
+    arma::frowvec& coef_intercepts,
+    arma::fvec& coef_nd,
+    arma::frowvec& coef_terrain,
     const IntegerMatrix& ignition_cells,
-    float upper_limit = 1.0,
-    int steps = 0
+    float upper_limit,
+    int steps
 ) {
   return simulate_fire_internal(
-    vegetation,
-    terrain,
-    coef_veg,
+    layer_vegetation,
+    layer_nd,
+    layer_terrain,
+    coef_intercepts,
+    coef_nd,
     coef_terrain,
     ignition_cells,
     upper_limit,
     steps
-  ).burned_bin;
+  ).burned_layer;
 }
 
 // -----------------------------------------------------------------------
@@ -547,25 +577,29 @@ IntegerMatrix simulate_fire(
 
 // [[Rcpp::export]]
 IntegerMatrix simulate_fire_deterministic(
-    const IntegerMatrix& vegetation,
-    const arma::fcube& terrain,
-    arma::frowvec coef_veg,
-    arma::frowvec coef_terrain,
+    const IntegerMatrix& layer_vegetation,
+    const arma::fcube& layer_nd,
+    const arma::fcube& layer_terrain,
+    arma::frowvec& coef_intercepts,
+    arma::fvec& coef_nd,
+    arma::frowvec& coef_terrain,
     const IntegerMatrix& ignition_cells,
-    float upper_limit = 1.0,
-    int steps = 0
-  ) {
+    float upper_limit,
+    int steps
+) {
 
   return simulate_fire_internal(
-    vegetation,
-    terrain,
-    coef_veg,
+    layer_vegetation,
+    layer_nd,
+    layer_terrain,
+    coef_intercepts,
+    coef_nd,
     coef_terrain,
     ignition_cells,
     upper_limit,
     steps,
     [](double _, double x) { return (double)(x >= 0.5); }
-  ).burned_bin;
+  ).burned_layer;
 }
 
 // -------------------------------------------------------------------------
@@ -583,26 +617,30 @@ IntegerMatrix simulate_fire_deterministic(
 //   and not integer to allow non-integer divisions later.
 
 burned_compare simulate_fire_compare_internal(
-    const IntegerMatrix& vegetation,
-    const arma::fcube& terrain,
-    arma::frowvec coef_veg,
-    arma::frowvec coef_terrain,
+    const IntegerMatrix& layer_vegetation,
+    const arma::fcube& layer_nd,
+    const arma::fcube& layer_terrain,
+    arma::frowvec& coef_intercepts,
+    arma::fvec& coef_nd,
+    arma::frowvec& coef_terrain,
     const IntegerMatrix& ignition_cells,
     float upper_limit,
     int steps
 ) {
 
   burned_res burned = simulate_fire_internal(
-    vegetation,
-    terrain,
-    coef_veg,
+    layer_vegetation,
+    layer_nd,
+    layer_terrain,
+    coef_intercepts,
+    coef_nd,
     coef_terrain,
     ignition_cells,
     upper_limit,
     steps
   );
 
-  IntegerMatrix burned_bin = burned.burned_bin;
+  IntegerMatrix burned_bin = burned.burned_layer;
   IntegerMatrix burned_ids = burned.burned_ids;
   int end = burned.end;
   int steps_used = burned.steps_used;
@@ -611,35 +649,39 @@ burned_compare simulate_fire_compare_internal(
 }
 
 burned_compare_veg simulate_fire_compare_veg_internal(
-    const IntegerMatrix& vegetation,
-    const arma::fcube& terrain,
-    arma::frowvec coef_veg,
-    arma::frowvec coef_terrain,
+    const IntegerMatrix& layer_vegetation,
+    const arma::fcube& layer_nd,
+    const arma::fcube& layer_terrain,
+    arma::frowvec& coef_intercepts,
+    arma::fvec& coef_nd,
+    arma::frowvec& coef_terrain,
     const IntegerMatrix& ignition_cells,
+    int n_veg,
     float upper_limit,
     int steps
 ) {
 
   burned_res burned = simulate_fire_internal(
-    vegetation,
-    terrain,
-    coef_veg,
+    layer_vegetation,
+    layer_nd,
+    layer_terrain,
+    coef_intercepts,
+    coef_nd,
     coef_terrain,
     ignition_cells,
     upper_limit,
     steps
   );
 
-  IntegerMatrix burned_bin = burned.burned_bin;
+  IntegerMatrix burned_bin = burned.burned_layer;
   IntegerMatrix burned_ids = burned.burned_ids;
   int end = burned.end;
   int steps_used = burned.steps_used;
-  int n_veg_types = coef_veg.size();
 
   // Compute burned area by vegetation type
-  NumericVector counts_veg(n_veg_types);
+  NumericVector counts_veg(n_veg);
   for(int i = 0; i <= end; i++) {
-    int veg_i = vegetation(burned_ids(0, i), burned_ids(1, i));
+    int veg_i = layer_vegetation(burned_ids(0, i), burned_ids(1, i));
     counts_veg[veg_i]++;
   }
 
@@ -647,19 +689,23 @@ burned_compare_veg simulate_fire_compare_veg_internal(
 }
 
 List simulate_fire_compare(
-    const IntegerMatrix& vegetation,
-    const arma::fcube& terrain,
-    arma::frowvec coef_veg,
-    arma::frowvec coef_terrain,
+    const IntegerMatrix& layer_vegetation,
+    const arma::fcube& layer_nd,
+    const arma::fcube& layer_terrain,
+    arma::frowvec& coef_intercepts,
+    arma::fvec& coef_nd,
+    arma::frowvec& coef_terrain,
     const IntegerMatrix& ignition_cells,
     float upper_limit,
     int steps
 ) {
 
   burned_compare burned_com = simulate_fire_compare_internal(
-    vegetation,
-    terrain,
-    coef_veg,
+    layer_vegetation,
+    layer_nd,
+    layer_terrain,
+    coef_intercepts,
+    coef_nd,
     coef_terrain,
     ignition_cells,
     upper_limit,
@@ -675,21 +721,27 @@ List simulate_fire_compare(
 }
 
 List simulate_fire_compare_veg(
-    const IntegerMatrix& vegetation,
-    const arma::fcube& terrain,
-    arma::frowvec coef_veg,
-    arma::frowvec coef_terrain,
+    const IntegerMatrix& layer_vegetation,
+    const arma::fcube& layer_nd,
+    const arma::fcube& layer_terrain,
+    arma::frowvec& coef_intercepts,
+    arma::fvec& coef_nd,
+    arma::frowvec& coef_terrain,
     const IntegerMatrix& ignition_cells,
+    int n_veg,
     float upper_limit,
     int steps
 ) {
 
   burned_compare_veg burned_com = simulate_fire_compare_veg_internal(
-    vegetation,
-    terrain,
-    coef_veg,
+    layer_vegetation,
+    layer_nd,
+    layer_terrain,
+    coef_intercepts,
+    coef_nd,
     coef_terrain,
     ignition_cells,
+    n_veg,
     upper_limit,
     steps
   );

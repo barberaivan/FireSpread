@@ -7,9 +7,9 @@ For building:
 Rscript -e "Rcpp::compileAttributes()"
 R CMD build .
 ```
-That should generate a file called `FireSpread_1.2.tar.gz`.
+That should generate a file called `FireSpread_1.3.tar.gz`.
 
 For installing:
 ```sh
-R CMD INSTALL FireSpread_1.2.tar.gz
+R CMD INSTALL FireSpread_1.3.tar.gz
 ```

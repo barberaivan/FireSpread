@@ -173,8 +173,8 @@ NumericVector compare_fires_try(List fire1, List fire2,
   NumericVector counts2 = fire2["counts_veg"];
 
   compare_result indexes = compare_fires_try_internal(
-    {burned1, burned_ids1, counts1},
-    {burned2, burned_ids2, counts2}
+  {burned1, burned_ids1, counts1},
+  {burned2, burned_ids2, counts2}
   );
 
   return NumericVector::create(
